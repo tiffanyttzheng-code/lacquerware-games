@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>漆艺匠心 - Lacquer Art Game</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Babel for JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import Map for React modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+      }
+    }
+    </script>
+
+    <style>
+        /* Custom Animations and Styles */
+        body { margin: 0; padding: 0; background-color: #000; }
+        
+        .flip-card { 
+            transition: transform 0.6s, background-color 0.3s; 
+            transform-style: preserve-3d; 
+        }
+        .flipping { 
+            transform: rotateY(180deg); 
+        }
+        
+        @keyframes drop-in { 
+            0% { transform: translateY(-50%); opacity: 0; } 
+            60% { transform: translateY(5%); opacity: 1; } 
+            100% { transform: translateY(0); } 
+        }
+        .animate-drop-in { 
+            animation: drop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+        }
+        
+        @keyframes puff { 
+            0% { transform: scale(0.5); opacity: 0.8; } 
+            100% { transform: scale(2); opacity: 0; } 
+        }
+        .particle { 
+            position: absolute; 
+            width: 40px; 
+            height: 40px; 
+            background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%); 
+            border-radius: 50%; 
+            pointer-events: none; 
+            animation: puff 0.5s ease-out forwards; 
+            z-index: 50; 
+        }
+        
+        @keyframes spin-fast { from { transform: rotate(0deg); } to { transform: rotate(720deg); } }
+        @keyframes spin-super-fast { from { transform: rotate(0deg); } to { transform: rotate(8640deg); } }
+        .animate-spin-fast { animation: spin-fast 5s linear forwards; }
+        .animate-spin-super-fast { animation: spin-super-fast 5s linear forwards; }
+        
+        /* Disable text selection */
+        .select-none { user-select: none; -webkit-user-select: none; }
+        
+        /* Polishing texture overlay */
+        .noise-texture {
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='1'/%3E%3C/svg%3E");
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Thermometer, Droplets, Clock, RotateCcw, Paintbrush, 
+            Zap, Scroll, RefreshCw, Pause, Play, Home, Layers, 
+            Sparkles, ChevronRight, Hand, Check, Star, Droplet, Hexagon, Gift, X
+        } from 'lucide-react';
+
+        // --- Constants ---
+        const VASE_SHAPE = [
+            [0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 1, 0, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 0, 1, 1, 1, 0, 0],
+            [0, 0, 1, 1, 1, 0, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+            [0, 1, 1, 1, 1, 1, 0],
+        ];
+        const ROWS = VASE_SHAPE.length;
+        const COLS = VASE_SHAPE[0].length;
+
+        const LEVEL_3_TARGET_MASK = [
+            [0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 1, 1, 0, 0, 0], 
+            [0, 0, 1, 1, 0, 1, 0],
+            [1, 0, 0, 0, 0, 0, 1], 
+            [1, 0, 1, 1, 1, 0, 1], 
+            [0, 0, 0, 0, 0, 1, 0],
+            [0, 0, 0, 1, 0, 0, 0],
+            [0, 0, 0, 1, 0, 0, 0], 
+            [0, 0, 0, 0, 0, 1, 0],
+            [0, 0, 1, 1, 0, 1, 0],
+        ];
+
+        const PATTERNS = ['PLUM', 'ORCHID', 'BAMBOO', 'CHRYSANTHEMUM', 'CLOUD'];
+
+        const COLORS = {
+            GREY: '#8d6e63',  // Base Wood/Putty
+            BLACK: '#1a1a1a', // Base Lacquer
+            RED: '#8B0000',   // Top Coat
+            GOLD: '#D4AF37',  // Decoration
+        };
+
+        const MAX_STAMINA = 180;
+        const INITIAL_STAMINA = 120;
+        const GAME_COST = 20;
+
+        const LEVELS = [
+            { id: 1, title: '刷底漆', subtitle: '灰底转黑', icon: Layers, targetColor: 'BLACK', baseColor: 'GREY' },
+            { id: 2, title: '刷面漆', subtitle: '黑底转红', icon: Paintbrush, targetColor: 'RED', baseColor: 'BLACK' },
+            { id: 3, title: '彩绘纹样', subtitle: '描金装饰', icon: Sparkles, targetColor: 'GOLD', baseColor: 'RED' },
+        ];
+
+        // --- Helpers ---
+        const getPos = (index) => ({ r: Math.floor(index / COLS), c: index % COLS });
+        const getIndex = (r, c) => r * COLS + c;
+
+        const isTileExposed = (r, c) => {
+            const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+            for (let [dr, dc] of directions) {
+                let currR = r + dr;
+                let currC = c + dc;
+                let hitBlock = false;
+                while (currR >= 0 && currR < ROWS && currC >= 0 && currC < COLS) {
+                    if (VASE_SHAPE[currR][currC] === 1) {
+                        hitBlock = true;
+                        break;
+                    }
+                    currR += dr;
+                    currC += dc;
+                }
+                if (!hitBlock) return true;
+            }
+            return false;
+        };
+
+        const findDeadTiles = (currentGrid) => {
+            const visited = new Set();
+            const tilesToRemove = new Set();
+            const activeIndices = currentGrid.map((t, i) => t ? i : -1).filter(i => i !== -1);
+            
+            for (const idx of activeIndices) {
+                if (visited.has(idx)) continue;
+                const queue = [idx];
+                visited.add(idx);
+                const clusterIndices = [idx];
+                const pattern = currentGrid[idx].pattern;
+                let isClusterExposed = false;
+                const startPos = getPos(idx);
+                if (isTileExposed(startPos.r, startPos.c)) isClusterExposed = true;
+
+                let head = 0;
+                const directions = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+
+                while(head < queue.length) {
+                    const currIdx = queue[head++];
+                    const { r, c } = getPos(currIdx);
+                    for (let [dr, dc] of directions) {
+                        const nr = r + dr;
+                        const nc = c + dc;
+                        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+                            const nIdx = getIndex(nr, nc);
+                            if (currentGrid[nIdx] && currentGrid[nIdx].pattern === pattern) {
+                                if (!visited.has(nIdx)) {
+                                    visited.add(nIdx);
+                                    queue.push(nIdx);
+                                    clusterIndices.push(nIdx);
+                                    if (isTileExposed(nr, nc)) isClusterExposed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!isClusterExposed) clusterIndices.forEach(i => tilesToRemove.add(i));
+            }
+            return Array.from(tilesToRemove);
+        };
+
+        // --- Shared Components ---
+
+        const Modal = ({ children, title, onClose }) => (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-6">
+            <div className="bg-[#f4e4bc] w-full max-w-xs rounded-xl border-4 border-[#5d4037] shadow-2xl p-6 relative">
+            <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#5d4037] text-[#f4e4bc] px-6 py-1 rounded-full font-serif font-bold tracking-widest shadow-md border-2 border-[#8d6e63] text-sm">
+                {title}
+            </div>
+            <div className="mt-4">
+                {children}
+            </div>
+            {onClose && (
+                <button onClick={onClose} className="absolute top-2 right-2 text-[#8d6e63] hover:text-[#5d4037]">
+                ✕
+                </button>
+            )}
+            </div>
+        </div>
+        );
+
+        const GameHeader = ({ stamina, onPause, showPause }) => (
+        <div className="absolute top-0 right-0 left-0 p-4 flex justify-between items-start z-40 pointer-events-none">
+            <div className="pointer-events-auto flex flex-col gap-2 scale-90 origin-top-left">
+            {showPause && (
+                <button 
+                onClick={onPause}
+                className="w-10 h-10 bg-[#5d4037] text-[#f4e4bc] rounded-full flex items-center justify-center shadow-lg border-2 border-[#8d6e63] active:scale-95 transition-transform"
+                >
+                <Pause size={20} fill="currentColor" />
+                </button>
+            )}
+            </div>
+
+            <div className="pointer-events-auto flex flex-col items-end scale-90 origin-top-right">
+            <div className="flex items-center gap-2 px-4 py-1.5 bg-[#4e342e] rounded-full border-2 border-[#6d4c41] shadow-lg">
+                <span className="font-bold text-[#d7ccc8] text-lg font-sans tracking-wide">
+                    {stamina}/{MAX_STAMINA}
+                </span>
+                <img src="images/power.png" alt="体力" className="w-5 h-5 drop-shadow-md" />
+            </div>
+            </div>
+        </div>
+        );
+
+        const StartScreen = ({ onStart }) => (
+        <div className="flex flex-col items-center justify-center h-full text-[#5d4037] animate-fadeIn p-6 text-center relative w-full bg-[#f9f7f2]">
+            <div className="mb-16 flex flex-col items-center">
+            {/* Minimalist Visual Element */}
+            <div className="w-24 h-24 rounded-full border border-[#5d4037] flex items-center justify-center mb-6 relative">
+                 <div className="absolute inset-2 border border-[#8d6e63] rounded-full opacity-50"></div>
+                 <div className="w-16 h-16 bg-[#9B2C2C] rounded-full shadow-inner flex items-center justify-center">
+                    <span className="text-4xl font-serif text-[#f4e4bc] font-bold">漆</span>
+                 </div>
+            </div>
+
+            <div className="w-12 h-[1px] bg-[#5d4037] mb-6 opacity-30"></div>
+            <h1 className="text-5xl font-serif font-bold mb-3 tracking-[0.5em] text-[#3e2723] ml-2 whitespace-nowrap">漆艺匠心</h1>
+            <h2 className="text-3xl font-serif font-bold tracking-[0.3em] text-[#5d4037] mb-4">叁·髹漆</h2>
+            <div className="w-12 h-[1px] bg-[#5d4037] mt-6 opacity-30"></div>
+            </div>
+            
+            <button 
+            onClick={onStart}
+            className="group relative w-full max-w-xs py-4 bg-[#3e2723] text-[#f4e4bc] rounded-sm overflow-hidden shadow-xl transition-all active:scale-95 hover:shadow-2xl"
+            >
+            <span className="relative z-10 font-serif text-lg font-bold flex items-center justify-center gap-3 tracking-[0.2em]">
+                进入工坊 <ChevronRight size={18} />
+            </span>
+            </button>
+            
+            <p className="absolute bottom-10 text-[10px] text-[#a1887f] font-serif tracking-widest opacity-60">传承非遗 · 匠心独运</p>
+        </div>
+        );
+
+        const LevelSelectScreen = ({ onSelectLevel, unlockedLevels }) => (
+        <div className="flex flex-col items-center h-full w-full p-6 animate-fadeIn pt-24 bg-[#f9f7f2]">
+            <h2 className="text-xl font-serif font-bold text-[#3e2723] mb-12 tracking-[0.3em] relative">
+                <span className="relative z-10 bg-[#f9f7f2] px-4">选择工序</span>
+                <div className="absolute top-1/2 left-0 w-full h-[1px] bg-[#3e2723] opacity-20 -z-0"></div>
+            </h2>
+            
+            <div className="flex flex-col gap-4 w-full max-w-xs">
+            {LEVELS.map((level) => {
+                const Icon = level.icon;
+                const isLocked = !unlockedLevels.includes(level.id);
+                return (
+                <button
+                    key={level.id}
+                    onClick={() => !isLocked && onSelectLevel(level.id)}
+                    disabled={isLocked}
+                    className={`
+                    relative flex items-center p-5 rounded-sm border transition-all shadow-sm group
+                    ${isLocked 
+                        ? 'bg-[#e0e0e0] border-transparent opacity-50 cursor-not-allowed grayscale' 
+                        : 'bg-[#fff] border-[#d7ccc8] text-[#5d4037] hover:border-[#8d6e63] cursor-pointer hover:shadow-md'
+                    }
+                    `}
+                >
+                    <div className={`
+                    w-10 h-10 flex items-center justify-center mr-5 shrink-0
+                    ${isLocked ? 'text-gray-400' : 'text-[#3e2723]'}
+                    `}>
+                    <Icon size={20} strokeWidth={1.5} />
+                    </div>
+                    <div className="flex flex-col items-start">
+                    <span className="text-base font-bold font-serif tracking-widest">
+                        {level.title}
+                    </span>
+                    <span className="text-[10px] text-[#8d6e63] mt-1 tracking-wider opacity-80">{isLocked ? '待解锁' : level.subtitle}</span>
+                    </div>
+                    {!isLocked && (
+                    <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-[#3e2723]">
+                        <ChevronRight size={16} />
+                    </div>
+                    )}
+                </button>
+                );
+            })}
+            </div>
+        </div>
+        );
+
+        // --- Core Game Stage ---
+        const VasePairMatchStage = ({ levelId, consumeStamina, addStamina, onComplete, onFail }) => {
+            const [grid, setGrid] = useState([]);
+            const [selectedTileId, setSelectedTileId] = useState(null);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [message, setMessage] = useState("");
+            const [progress, setProgress] = useState(0); 
+            const [autoFixMessage, setAutoFixMessage] = useState(false);
+            const [shuffleWarn, setShuffleWarn] = useState(false);
+            
+            // Timer & Stars
+            const [timeElapsed, setTimeElapsed] = useState(0);
+            const [currentStars, setCurrentStars] = useState(3);
+            const timerRef = useRef(null);
+            
+            // Post-game in-place states
+            const [internalStage, setInternalStage] = useState('playing'); // playing, sanding, waiting
+            
+            // Sanding State for Level 1
+            const [sandingClicks, setSandingClicks] = useState(0);
+            const [particles, setParticles] = useState([]);
+            
+            // Waiting State for Level 2/3 (Inline Overlay)
+            const [waitingTime, setWaitingTime] = useState(5); // 5 seconds duration
+
+            const globalIdCounter = useRef(0);
+            const levelInfo = LEVELS.find(l => l.id === levelId);
+
+            // Determine colors based on level
+            const baseColorName = levelInfo ? levelInfo.baseColor : COLORS.GREY;
+            const targetColorName = levelInfo ? levelInfo.targetColor : COLORS.BLACK;
+
+            useEffect(() => {
+                initializeGrid();
+                return () => {
+                    if (timerRef.current) clearInterval(timerRef.current);
+                };
+            }, [levelId]); 
+
+            // Timer Logic - Updates time
+            useEffect(() => {
+                // No timer for Level 3 or when not playing
+                if (levelId === 3 || internalStage !== 'playing' || isProcessing || grid.length === 0) return;
+
+                const timer = setInterval(() => {
+                setTimeElapsed(prev => prev + 1);
+                }, 1000);
+
+                return () => clearInterval(timer);
+            }, [levelId, internalStage, isProcessing, grid.length]);
+
+            // Stars Calculation and Fail Check Logic
+            useEffect(() => {
+                if (levelId === 3 || internalStage !== 'playing') return;
+
+                let stars = 0;
+                // <= 20s: 3 Stars
+                // <= 30s: 2 Stars
+                // <= 40s: 1 Star
+                // > 40s: Fail
+                if (timeElapsed <= 20) stars = 3;
+                else if (timeElapsed <= 30) stars = 2;
+                else if (timeElapsed <= 40) stars = 1;
+                else stars = 0; 
+                
+                // Only update if changed
+                setCurrentStars(prev => prev !== stars ? stars : prev);
+
+                // Fail Condition
+                if (timeElapsed > 40) {
+                    setTimeout(() => onFail(), 0);
+                }
+            }, [timeElapsed, levelId, internalStage, onFail]);
+
+            // Timer for Waiting Stage (Inline)
+            useEffect(() => {
+                if (internalStage === 'waiting') {
+                    if (waitingTime > 0) {
+                        const timer = setTimeout(() => setWaitingTime(p => p - 1), 1000);
+                        return () => clearTimeout(timer);
+                    } else {
+                        // Pass the final grid state to parent when completing
+                        setTimeout(() => onComplete(currentStars, grid), 500);
+                    }
+                }
+            }, [internalStage, waitingTime, currentStars, onComplete, grid]);
+
+            useEffect(() => {
+                // Level 3 is free painting
+                if (levelId === 3) {
+                    setProgress(100); 
+                    setCurrentStars(3); 
+                    return;
+                }
+
+                if (grid.length > 0 && !isProcessing && internalStage === 'playing') {
+                    const totalTiles = grid.filter(t => t !== null).length;
+                    const targetTiles = grid.filter(t => t && t.color === targetColorName).length;
+                    const currentProgress = totalTiles > 0 ? Math.round((targetTiles / totalTiles) * 100) : 0;
+                    
+                    setProgress(currentProgress);
+
+                    if (currentProgress === 100) {
+                        if (timerRef.current) clearInterval(timerRef.current); // Stop timer immediately on success
+
+                        if (levelId === 1) {
+                            setTimeout(() => {
+                                setInternalStage('sanding');
+                                setMessage("进入打磨工序");
+                            }, 500);
+                        } else if (levelId === 2) {
+                            setTimeout(() => {
+                                setInternalStage('waiting');
+                            }, 500);
+                        }
+                    } else {
+                        const timer = setTimeout(() => {
+                            checkAndHandleDisconnectedIslands();
+                        }, 800); 
+                        return () => clearTimeout(timer);
+                    }
+                }
+            }, [grid, isProcessing, internalStage, levelId, targetColorName]);
+
+            const generateUniqueId = () => { globalIdCounter.current += 1; return `tile-${globalIdCounter.current}`; };
+            const createTile = (pattern, color) => ({ id: generateUniqueId(), color, pattern, isFlipping: false, isNew: false });
+
+            // --- Updated Initialization Logic for Harder Difficulty ---
+            const initializeGrid = () => {
+                globalIdCounter.current = 0; 
+                const distribution = [10, 10, 8, 8, 8]; 
+                let tilePool = [];
+
+                PATTERNS.forEach((p, idx) => {
+                    const count = distribution[idx];
+                    if (levelId === 3) {
+                        for(let i=0; i<count; i++) tilePool.push({ pattern: p, color: baseColorName });
+                    } else {
+                        let baseCount = 0;
+                        do { 
+                           baseCount = Math.floor(Math.random() * (count + 1));
+                           if (baseCount % 2 !== 0) baseCount -= 1; 
+                           if (baseCount < (count * 0.66)) {
+                               baseCount = count; 
+                               if (Math.random() > 0.5 && count > 2) baseCount -= 2; 
+                           }
+                        } while (baseCount % 2 !== 0 || baseCount > count);
+
+                        for(let i=0; i<count; i++) {
+                            const color = i < baseCount ? baseColorName : targetColorName;
+                            tilePool.push({ pattern: p, color: color });
+                        }
+                    }
+                });
+
+                for (let i = tilePool.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [tilePool[i], tilePool[j]] = [tilePool[j], tilePool[i]];
+                }
+
+                let tempGrid = [];
+                let poolIdx = 0;
+                let activeIndices = [];
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (VASE_SHAPE[r][c] === 1) {
+                            const data = tilePool[poolIdx++];
+                            const tile = createTile(data.pattern, data.color);
+                            tempGrid.push(tile);
+                            activeIndices.push(tempGrid.length - 1);
+                        } else {
+                            tempGrid.push(null);
+                        }
+                    }
+                }
+
+                // Fast Fix Deadlocks
+                if (levelId !== 3) {
+                    let fixIterations = 0;
+                    let deadIndices = findDeadTiles(tempGrid);
+                    while (deadIndices.length > 0 && fixIterations < 100) {
+                        const badIdx = deadIndices[0];
+                        const swapTargetIdx = activeIndices[Math.floor(Math.random() * activeIndices.length)];
+                        if (swapTargetIdx !== badIdx) {
+                            const temp = tempGrid[badIdx];
+                            tempGrid[badIdx] = tempGrid[swapTargetIdx];
+                            tempGrid[swapTargetIdx] = temp;
+                        }
+                        deadIndices = findDeadTiles(tempGrid);
+                        fixIterations++;
+                    }
+                }
+
+                setGrid(tempGrid);
+            };
+
+            // Interaction
+            const handleTileClick = (index) => {
+                if (isProcessing || internalStage !== 'playing') return;
+                const tile = grid[index];
+                if (!tile) return;
+
+                // Level 3: Free Painting
+                if (levelId === 3) {
+                    executeSingleFlip(index);
+                    return;
+                }
+
+                // Level 1 & 2: Pair Matching
+                if (selectedTileId === tile.id) { setSelectedTileId(null); return; }
+
+                if (!selectedTileId) {
+                    setSelectedTileId(tile.id);
+                } else {
+                    const selectedIndex = grid.findIndex(t => t && t.id === selectedTileId);
+                    if (selectedIndex === -1) { setSelectedTileId(tile.id); return; }
+                    const selectedTile = grid[selectedIndex];
+
+                    if (tile.pattern === selectedTile.pattern) {
+                        const startPos = getPos(selectedIndex); 
+                        const endPos = getPos(index); 
+                        const isAdjacent = Math.max(Math.abs(startPos.r - endPos.r), Math.abs(startPos.c - endPos.c)) === 1;
+                        
+                        let connected = isAdjacent;
+                        if (!connected) {
+                            // BFS Pathfinding
+                            const queue = [{row: startPos.r, col: startPos.c}];
+                            const visited = new Set();
+                            visited.add(`${startPos.r},${startPos.c}`);
+                            const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
+                            
+                            while (queue.length > 0) {
+                                const curr = queue.shift();
+                                for(let [dr, dc] of dirs) {
+                                    const nr = curr.row + dr;
+                                    const nc = curr.col + dc;
+                                    
+                                    if (nr === endPos.r && nc === endPos.c) { connected = true; break; }
+                                    if (nr >= -1 && nr <= ROWS && nc >= -1 && nc <= COLS) {
+                                        const key = `${nr},${nc}`;
+                                        if (!visited.has(key)) {
+                                            let walkable = false;
+                                            if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) walkable = true;
+                                            else if (VASE_SHAPE[nr][nc] === 0) walkable = true;
+                                            
+                                            if (walkable) { 
+                                                visited.add(key); 
+                                                queue.push({row: nr, col: nc}); 
+                                            }
+                                        }
+                                    }
+                                }
+                                if(connected) break;
+                            }
+                        }
+
+                        if (connected) {
+                            executePairFlip(selectedIndex, index);
+                        } else {
+                            setSelectedTileId(tile.id);
+                            setMessage("路径被阻挡");
+                            setTimeout(() => setMessage(""), 1000);
+                        }
+                    } else {
+                        setSelectedTileId(tile.id);
+                    }
+                }
+            };
+
+            const executePairFlip = (idx1, idx2) => {
+                setIsProcessing(true);
+                setSelectedTileId(null);
+                setGrid(prev => {
+                    const n = [...prev];
+                    n[idx1] = { ...n[idx1], isFlipping: true };
+                    n[idx2] = { ...n[idx2], isFlipping: true };
+                    return n;
+                });
+
+                setTimeout(() => {
+                    setGrid(prev => {
+                        const n = [...prev];
+                        const t1 = n[idx1];
+                        const t2 = n[idx2];
+                        const flip = (c) => c === baseColorName ? targetColorName : baseColorName;
+                        n[idx1] = { ...t1, color: flip(t1.color), isFlipping: false };
+                        n[idx2] = { ...t2, color: flip(t2.color), isFlipping: false };
+                        
+                        if (n[idx1].color === targetColorName && n[idx2].color === targetColorName) {
+                            setTimeout(() => addStamina(2), 0);
+                        }
+                        return n;
+                    });
+                    setIsProcessing(false);
+                }, 300);
+            };
+
+            const executeSingleFlip = (idx) => {
+                setGrid(prev => {
+                    const n = [...prev];
+                    const tile = n[idx];
+                    const newColor = tile.color === baseColorName ? targetColorName : baseColorName;
+                    n[idx] = { ...tile, color: newColor };
+                    return n;
+                });
+            };
+
+            // --- Sanding Interaction ---
+            const handleSandingClick = (e) => {
+                if (internalStage !== 'sanding') return;
+                const MAX_CLICKS = 15;
+                
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const newParticle = { id: Date.now(), x, y };
+                setParticles(prev => [...prev, newParticle]);
+                setTimeout(() => setParticles(prev => prev.filter(p => p.id !== newParticle.id)), 500);
+
+                setSandingClicks(prev => {
+                    const next = prev + 1;
+                    if (next >= MAX_CLICKS) {
+                        setTimeout(() => onComplete(currentStars), 500);
+                    }
+                    return next;
+                });
+            };
+
+            const checkAndHandleDisconnectedIslands = () => {
+                if (levelId === 3) return; // No deadlock in L3
+                const deadIndices = findDeadTiles(grid);
+                if (deadIndices.length > 0) {
+                    setIsProcessing(true);
+                    setAutoFixMessage(true);
+                    const nextGrid = [...grid];
+                    const recycledTiles = [];
+                    deadIndices.forEach(idx => {
+                        if (grid[idx]) recycledTiles.push({ pattern: grid[idx].pattern, color: grid[idx].color });
+                        nextGrid[idx] = null;
+                    });
+                    setGrid(nextGrid);
+                    setTimeout(() => {
+                        applyGravityAndRespawn(nextGrid, recycledTiles);
+                        setTimeout(() => setAutoFixMessage(false), 1500);
+                    }, 400);
+                } else {
+                    checkGlobalDeadlock();
+                }
+            };
+
+            const checkGlobalDeadlock = () => {
+                if (levelId === 3) return;
+                const activeTiles = grid.filter(t => t !== null);
+                if (activeTiles.length === 0) return;
+                const patterns = {};
+                activeTiles.forEach(t => { patterns[t.pattern] = (patterns[t.pattern] || 0) + 1; });
+                const possiblePairs = Object.values(patterns).some(count => count >= 2);
+                if (!possiblePairs && activeTiles.length > 1) {
+                    setShuffleWarn(true);
+                    setTimeout(() => { performShuffle(); setShuffleWarn(false); }, 1500);
+                }
+            };
+
+            const performShuffle = () => {
+                setGrid(prevGrid => {
+                    const newGrid = [...prevGrid];
+                    const activeIndices = [];
+                    const activeTiles = [];
+                    newGrid.forEach((t, i) => { if (t !== null) { activeIndices.push(i); activeTiles.push(t); } });
+                    for (let i = activeTiles.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [activeTiles[i], activeTiles[j]] = [activeTiles[j], activeTiles[i]];
+                    }
+                    activeIndices.forEach((gridIdx, i) => { newGrid[gridIdx] = activeTiles[i]; });
+                    return newGrid;
+                });
+            };
+
+            const applyGravityAndRespawn = (currentGrid, recycledTilesPool) => {
+                const nextGrid = [...currentGrid];
+                for (let i = recycledTilesPool.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [recycledTilesPool[i], recycledTilesPool[j]] = [recycledTilesPool[j], recycledTilesPool[i]];
+                }
+                for (let c = 0; c < COLS; c++) {
+                    const existingTiles = [];
+                    const vaseSlotsIndices = [];
+                    for (let r = 0; r < ROWS; r++) {
+                        if (VASE_SHAPE[r][c] === 1) {
+                            const idx = getIndex(r, c);
+                            vaseSlotsIndices.push(idx);
+                            if (nextGrid[idx] !== null) existingTiles.push(nextGrid[idx]);
+                        }
+                    }
+                    const needed = vaseSlotsIndices.length - existingTiles.length;
+                    if (needed > 0) {
+                        const newTiles = [];
+                        for (let i = 0; i < needed; i++) {
+                            let data = recycledTilesPool.shift() || { pattern: 'PLUM', color: baseColorName }; 
+                            newTiles.push({ id: generateUniqueId(), color: data.color, pattern: data.pattern, isFlipping: false, isNew: true });
+                        }
+                        const finalCol = [...newTiles, ...existingTiles];
+                        for (let i = 0; i < vaseSlotsIndices.length; i++) {
+                            nextGrid[vaseSlotsIndices[i]] = finalCol[i];
+                        }
+                    }
+                }
+                setGrid(nextGrid);
+                setIsProcessing(false);
+            };
+
+            const getPatternIcon = (pattern, color) => {
+                const iconColor = 'rgba(255,255,255,0.8)';
+                const style = { color: iconColor };
+                switch(pattern) {
+                    case 'PLUM': return <div className="text-xl" style={style}>🌸</div>;
+                    case 'ORCHID': return <div className="text-xl" style={style}>🌿</div>;
+                    case 'BAMBOO': return <div className="text-xl" style={style}>🎋</div>;
+                    case 'CHRYSANTHEMUM': return <div className="text-xl" style={style}>🌼</div>;
+                    case 'CLOUD': return <div className="text-xl" style={style}>☁️</div>;
+                    default: return null;
+                }
+            };
+
+            const getGoalsText = () => {
+                if (internalStage === 'sanding') return "目标：点击屏幕打磨漆面";
+                if (levelId === 1) return "目标：将所有漆块刷成黑色底漆";
+                if (levelId === 2) return "目标：将所有漆块刷成红色面漆";
+                return "目标：自由创作，绘制金色纹样";
+            };
+
+            const getOperationText = () => {
+                if (internalStage === 'sanding') return "反复点击直至画面清晰";
+                if (levelId === 3) return "操作：点击任意方块翻转金/红颜色";
+                return "操作：相邻/斜角/边缘连线，两两翻色";
+            };
+
+            // Sanding blur calculation
+            const blurAmount = internalStage === 'sanding' ? Math.max(0, 10 - (sandingClicks / 15) * 10) : 0;
+            const sandingProgress = Math.min(100, (sandingClicks / 15) * 100);
+
+            // Format time
+            const formatTime = (sec) => {
+                const m = Math.floor(sec / 60);
+                const s = sec % 60;
+                return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+            };
+
+            if (!levelInfo) return null; // Defensive return
+
+            return (
+                <div className="flex flex-col items-center h-full w-full relative pt-24">
+                <style>{`
+                    .flip-card { transition: transform 0.6s, background-color 0.3s; transform-style: preserve-3d; }
+                    .flipping { transform: rotateY(180deg); }
+                    @keyframes drop-in { 0% { transform: translateY(-50%); opacity: 0; } 60% { transform: translateY(5%); opacity: 1; } 100% { transform: translateY(0); } }
+                    .animate-drop-in { animation: drop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+                    @keyframes puff { 0% { transform: scale(0.5); opacity: 0.8; } 100% { transform: scale(2); opacity: 0; } }
+                    .particle { position: absolute; width: 40px; height: 40px; background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%); border-radius: 50%; pointer-events: none; animation: puff 0.5s ease-out forwards; z-index: 50; }
+                    @keyframes spin-fast { from { transform: rotate(0deg); } to { transform: rotate(720deg); } }
+                    @keyframes spin-super-fast { from { transform: rotate(0deg); } to { transform: rotate(8640deg); } }
+                    .animate-spin-fast { animation: spin-fast 5s linear forwards; }
+                    .animate-spin-super-fast { animation: spin-super-fast 5s linear forwards; }
+                `}</style>
+                
+                {/* Timer and Stars (Only for L1/L2) */}
+                {levelId !== 3 && (
+                    <div className="absolute top-16 w-full px-6 flex justify-between items-center z-10">
+                        <div className="flex items-center gap-1 text-[#5d4037] font-mono font-bold bg-[#fff8e1]/80 px-2 py-1 rounded shadow-sm border border-[#d7ccc8]">
+                            <Clock size={14} /> {formatTime(timeElapsed)}
+                        </div>
+                        <div className="flex gap-1">
+                            {[1, 2, 3].map(star => (
+                                <Star 
+                                    key={star} 
+                                    size={20} 
+                                    fill={star <= currentStars ? "#D4AF37" : "#d7ccc8"} 
+                                    stroke={star <= currentStars ? "#8d6e63" : "#a1887f"}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Progress */}
+                <div className="w-full mt-2 mb-2 px-6 flex flex-col items-center">
+                    <div className="flex justify-between w-full mb-1">
+                        <span className="text-sm text-[#5d4037] font-bold font-serif uppercase tracking-wider">
+                            {internalStage === 'sanding' ? '打磨' : levelInfo.title}进度
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-[#8d6e63] font-serif font-bold">
+                                {internalStage === 'sanding' ? Math.round(sandingProgress) : progress}%
+                            </span>
+                        </div>
+                    </div>
+                    <div className="w-full h-3 bg-[#d7ccc8] rounded-full overflow-hidden border border-[#8d6e63]">
+                        <div className={`h-full transition-all duration-500 ${internalStage === 'sanding' ? 'bg-stone-500' : 'bg-[#8B0000]'}`} 
+                                style={{width: `${internalStage === 'sanding' ? sandingProgress : progress}%`}}></div>
+                    </div>
+                </div>
+                
+                {message && <div className="absolute top-28 left-1/2 -translate-x-1/2 bg-[#3e2723] text-[#f4e4bc] px-4 py-2 rounded-lg text-sm animate-bounce z-50 whitespace-nowrap shadow-xl border border-[#8d6e63]">{message}</div>}
+                {autoFixMessage && <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#fff8e1]/95 p-4 rounded-xl shadow-2xl z-50 flex flex-col items-center animate-pulse border-2 border-[#8B0000]"><RefreshCw className="animate-spin mb-2 text-[#8B0000] w-8 h-8" /><span className="font-bold text-[#8B0000] text-sm font-serif">孤岛死局，自动重组...</span></div>}
+                {shuffleWarn && !autoFixMessage && <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#fff8e1]/95 p-4 rounded-xl shadow-2xl z-50 flex flex-col items-center animate-pulse border-2 border-[#5d4037]"><RefreshCw className="animate-spin mb-2 text-[#5d4037] w-8 h-8" /><span className="font-bold text-[#5d4037] text-sm font-serif">无路可通，洗牌中...</span></div>}
+
+                {/* Grid Container */}
+                <div 
+                    className="relative mt-0 flex-1 flex items-center justify-center w-full overflow-hidden"
+                    onClick={handleSandingClick}
+                >
+                    {/* Particles */}
+                    {particles.map(p => <div key={p.id} className="particle" style={{ left: p.x - 20, top: p.y - 20 }} />)}
+
+                    {/* Inline Waiting Overlay - Minimal & Centered */}
+                    {internalStage === 'waiting' && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center animate-fadeIn">
+                            <div className="bg-[#f4e4bc]/95 p-6 rounded-full shadow-[0_0_40px_rgba(93,64,55,0.4)] border-4 border-[#5d4037] flex flex-col items-center gap-2">
+                                {/* Analog Clock Animation */}
+                                <div className="relative w-16 h-16 border-4 border-[#5d4037] rounded-full bg-white flex items-center justify-center">
+                                    <div className="absolute left-1/2 bottom-1/2 w-1.5 h-4 bg-[#8B0000] -translate-x-1/2 origin-bottom animate-spin-fast rounded-full"></div>
+                                    <div className="absolute left-1/2 bottom-1/2 w-1 h-6 bg-[#3e2723] -translate-x-1/2 origin-bottom animate-spin-super-fast rounded-full"></div>
+                                    <div className="w-2 h-2 bg-[#5d4037] rounded-full z-10"></div>
+                                    <div className="absolute top-1 left-1/2 w-0.5 h-1 bg-[#d7ccc8] -translate-x-1/2"></div>
+                                    <div className="absolute bottom-1 left-1/2 w-0.5 h-1 bg-[#d7ccc8] -translate-x-1/2"></div>
+                                    <div className="absolute left-1 top-1/2 h-0.5 w-1 bg-[#d7ccc8] -translate-y-1/2"></div>
+                                    <div className="absolute right-1 top-1/2 h-0.5 w-1 bg-[#d7ccc8] -translate-y-1/2"></div>
+                                </div>
+                                <span className="text-[#5d4037] font-bold font-serif text-lg tracking-widest mt-1">等待阴干中</span>
+                            </div>
+                        </div>
+                    )}
+
+                    <div 
+                        className="grid gap-1 scale-95 origin-center transition-all duration-300" 
+                        style={{ 
+                            gridTemplateColumns: `repeat(${COLS}, 1fr)`, 
+                            width: 'fit-content', 
+                            margin: '0 auto',
+                            filter: internalStage === 'sanding' ? `blur(${blurAmount}px)` : 'none',
+                            opacity: internalStage === 'sanding' ? 0.9 : 1,
+                        }}
+                    >
+                        {grid.map((tile, index) => {
+                            const r = Math.floor(index / COLS);
+                            const c = index % COLS;
+                            if (VASE_SHAPE[r][c] === 0) return <div key={`spacer-${index}`} className="w-9 h-9" />; 
+                            if (!tile) return <div key={`empty-${index}`} className="w-9 h-9 rounded bg-black/5 shadow-inner" />;
+
+                            const isSelected = selectedTileId === tile.id;
+                            
+                            return (
+                                <div key={tile.id} className="relative w-9 h-9 flex items-center justify-center">
+                                    <button
+                                        onClick={(e) => {
+                                            if (internalStage === 'sanding' || internalStage === 'waiting') return;
+                                            e.stopPropagation();
+                                            handleTileClick(index);
+                                        }}
+                                        className={`
+                                            w-full h-full rounded flex items-center justify-center relative shadow-sm touch-manipulation border-2
+                                            flip-card ${tile.isFlipping ? 'flipping' : ''}
+                                            ${isSelected ? 'ring-2 ring-[#d4af37] scale-105 z-20 border-[#d4af37]' : 'active:scale-95 z-10'}
+                                            ${tile.isNew ? 'animate-drop-in' : ''}
+                                        `}
+                                        style={{
+                                            backgroundColor: COLORS[tile.color],
+                                            borderColor: isSelected ? '#d4af37' : (tile.color === 'BLACK' ? '#333' : 'rgba(0,0,0,0.1)'),
+                                            cursor: (internalStage === 'sanding' || internalStage === 'waiting') ? 'default' : 'pointer'
+                                        }}
+                                    >
+                                        <div className="w-full h-full flex items-center justify-center">{getPatternIcon(tile.pattern, tile.color)}</div>
+                                        <div className="absolute inset-0 opacity-20 pointer-events-none rounded" style={{backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.4' fill-rule='evenodd'%3E%3Cpath d='M0 40L40 0H20L0 20M40 40V20L20 40'/%3E%3C/g%3E%3C/svg%3E")`}}></div>
+                                        <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-gradient-to-bl from-white/30 to-transparent rounded-tr pointer-events-none"></div>
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    
+                    {internalStage === 'sanding' && (
+                        <div className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-30 bg-[url('https://www.transparenttextures.com/patterns/stucco.png')]"></div>
+                    )}
+                </div>
+
+                {/* Level 3 Finish Button */}
+                {levelId === 3 && internalStage === 'playing' && (
+                    <div className="mb-4">
+                        <button 
+                            onClick={() => setInternalStage('waiting')}
+                            className="px-8 py-2 bg-[#3e2723] text-[#f4e4bc] rounded-full shadow-lg font-serif tracking-widest flex items-center gap-2 hover:bg-[#5d4037] active:scale-95 transition-all"
+                        >
+                            <Check size={18} /> 完成创作
+                        </button>
+                    </div>
+                )}
+
+                <div className="mb-6 px-4 text-center">
+                    <p className="text-sm text-[#5d4037] font-bold mb-1 font-serif tracking-wider">{getGoalsText()}</p>
+                    <p className="text-xs text-[#8d6e63] leading-relaxed font-serif opacity-90">{getOperationText()}</p>
+                </div>
+                </div>
+            );
+        };
+
+        // --- Post-Level Stages ---
+
+        const PolishingStage = ({ onComplete, gridState }) => {
+            const [progress, setProgress] = useState(0);
+            const containerRef = useRef(null);
+            const [selectedTool, setSelectedTool] = useState(null); // 'ash' | 'oil' | null
+            const [hasOil, setHasOil] = useState(false);
+            const [hasAsh, setHasAsh] = useState(false);
+            const [hintMessage, setHintMessage] = useState("请先蘸取植物油和细灰");
+            const [currentBlur, setCurrentBlur] = useState(10); // Start with 10px blur
+            const isCompleteRef = useRef(false);
+            
+            const TOTAL_CLICKS_REQUIRED = 15;
+            const [clickCount, setClickCount] = useState(0);
+
+            // Reconstruct the visual grid from the state passed
+            const getPatternIcon = (pattern, color) => {
+                const iconColor = 'rgba(255,255,255,0.8)';
+                const style = { color: iconColor };
+                switch(pattern) {
+                    case 'PLUM': return <div className="text-xl" style={style}>🌸</div>;
+                    case 'ORCHID': return <div className="text-xl" style={style}>🌿</div>;
+                    case 'BAMBOO': return <div className="text-xl" style={style}>🎋</div>;
+                    case 'CHRYSANTHEMUM': return <div className="text-xl" style={style}>🌼</div>;
+                    case 'CLOUD': return <div className="text-xl" style={style}>☁️</div>;
+                    default: return null;
+                }
+            };
+
+            const handleToolClick = (tool) => {
+                if (tool === 'oil') {
+                    setHasOil(true);
+                    if (hasAsh) setHintMessage("原料已备，请点击漆面推光");
+                    else setHintMessage("已蘸植物油，请再蘸细灰");
+                } else if (tool === 'ash') {
+                    setHasAsh(true);
+                    if (hasOil) setHintMessage("原料已备，请点击漆面推光");
+                    else setHintMessage("已蘸细灰，请再蘸植物油");
+                }
+            };
+
+            const handleImageClick = (e) => {
+                if (isCompleteRef.current) return;
+                if (!hasOil || !hasAsh) return;
+
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const newClickCount = clickCount + 1;
+                setClickCount(newClickCount);
+
+                const newBlur = Math.max(0, 10 - (newClickCount / TOTAL_CLICKS_REQUIRED) * 10);
+                setCurrentBlur(newBlur);
+                setProgress(Math.min(100, (newClickCount / TOTAL_CLICKS_REQUIRED) * 100));
+
+                if (newClickCount >= TOTAL_CLICKS_REQUIRED) {
+                    isCompleteRef.current = true;
+                    setTimeout(onComplete, 1200);
+                }
+            };
+
+            return (
+                <div 
+                className="flex flex-col items-center justify-center h-full w-full relative bg-[#4a0404] touch-none pt-24"
+                >
+                {/* Main Interaction Area - Reusing the grid visual */}
+                <div 
+                    className="relative p-4 flex items-center justify-center cursor-crosshair overflow-hidden"
+                    onClick={handleImageClick}
+                >
+                    <div 
+                        className="grid gap-1 scale-75 origin-center transition-all duration-300 pointer-events-none" 
+                        style={{ 
+                            gridTemplateColumns: `repeat(${COLS}, 1fr)`, 
+                            width: 'fit-content', 
+                            filter: `blur(${currentBlur}px)`
+                        }}
+                    >
+                        {gridState && gridState.map((tile, index) => {
+                            const r = Math.floor(index / COLS);
+                            const c = index % COLS;
+                            if (VASE_SHAPE[r][c] === 0) return <div key={`spacer-${index}`} className="w-9 h-9" />; 
+                            if (!tile) return <div key={`empty-${index}`} className="w-9 h-9" />;
+                            
+                            return (
+                                <div key={tile.id} className="relative w-9 h-9 flex items-center justify-center">
+                                    <div
+                                        className="w-full h-full rounded flex items-center justify-center relative shadow-sm border-2 border-transparent"
+                                        style={{ backgroundColor: COLORS[tile.color] }}
+                                    >
+                                        <div className="w-full h-full flex items-center justify-center">{getPatternIcon(tile.pattern, tile.color)}</div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Completion Text Overlay */}
+                    {progress >= 100 && (
+                        <div className="absolute z-10 bg-black/60 text-[#D4AF37] px-4 py-2 rounded-full font-serif text-lg tracking-widest border border-[#D4AF37] animate-bounce">
+                            推光完成
+                        </div>
+                    )}
+                </div>
+                
+                {/* Progress Bar */}
+                <div className="w-48 h-2 bg-[#333] mt-8 rounded-full overflow-hidden mx-auto border border-[#5d4037]/50 shadow-inner">
+                    <div 
+                        className="h-full bg-gradient-to-r from-[#D4AF37] to-[#F9A825] transition-all duration-300 ease-out" 
+                        style={{width: `${progress}%`}}
+                    ></div>
+                </div>
+
+                {/* Tools Section */}
+                <div className="mt-8 text-center w-full px-8">
+                    <div className="flex justify-center gap-8 mb-6">
+                        <button 
+                            onClick={() => handleToolClick('ash')}
+                            className={`
+                                relative p-4 rounded-full border-2 transition-all duration-300 flex flex-col items-center w-16 h-16 justify-center shadow-lg
+                                ${hasAsh 
+                                    ? 'bg-[#5d4037] border-[#D4AF37] text-white scale-110 shadow-[#D4AF37]/20' 
+                                    : 'bg-[#f4e4bc] border-[#8d6e63] text-[#5d4037] hover:bg-[#fff8e1]'}
+                            `}
+                        >
+                           <Hexagon size={24} strokeWidth={1.5} />
+                           <span className="absolute -bottom-6 text-[10px] whitespace-nowrap font-serif tracking-wide text-[#f4e4bc]">细灰</span>
+                           {hasAsh && <div className="absolute top-0 right-0 w-3 h-3 bg-green-500 rounded-full border border-white"></div>}
+                        </button>
+                        
+                        <button 
+                            onClick={() => handleToolClick('oil')}
+                            className={`
+                                relative p-4 rounded-full border-2 transition-all duration-300 flex flex-col items-center w-16 h-16 justify-center shadow-lg
+                                ${hasOil 
+                                    ? 'bg-[#5d4037] border-[#D4AF37] text-white scale-110 shadow-[#D4AF37]/20' 
+                                    : 'bg-[#f4e4bc] border-[#8d6e63] text-[#5d4037] hover:bg-[#fff8e1]'}
+                            `}
+                        >
+                           <Droplet size={24} strokeWidth={1.5} />
+                           <span className="absolute -bottom-6 text-[10px] whitespace-nowrap font-serif tracking-wide text-[#f4e4bc]">植物油</span>
+                           {hasOil && <div className="absolute top-0 right-0 w-3 h-3 bg-green-500 rounded-full border border-white"></div>}
+                        </button>
+                    </div>
+                    
+                    <p className="text-[#f4e4bc]/80 text-xs font-serif tracking-wider h-4 transition-all duration-300">
+                        {hintMessage}
+                    </p>
+                </div>
+                </div>
+            );
+        };
+
+        const ResultStage = ({ stars, onSelectLevel, onRestart, levelId }) => {
+            const [showRewardModal, setShowRewardModal] = useState(false);
+            
+            let title = "", description = "";
+            let emoImage = "";
+            let colorClass = "";
+
+            if (stars === 3) {
+                title = "神乎其技"; 
+                description = <>色泽温润，光彩照人，<br/>传世之作。</>; 
+                colorClass = "text-[#8B0000]"; 
+                emoImage = "images/emo-satisfied.png";
+            } else if (stars === 2) {
+                title = "良工巧匠"; 
+                description = <>技艺娴熟，虽有瑕疵，<br/>但整体饱满。</>; 
+                colorClass = "text-[#f57f17]"; 
+                emoImage = "images/emo-good.png";
+            } else if (stars === 1) {
+                title = "初窥门径"; 
+                description = <>漆器已成，<br/>然光泽稍暗。</>; 
+                colorClass = "text-[#5d4037]"; 
+                emoImage = "images/emo-angry.png";
+            } else {
+                title = "功亏一篑"; 
+                description = <>耗时过长，<br/>漆面已干涸。</>; 
+                colorClass = "text-gray-600"; 
+                emoImage = "images/emo-angry.png";
+            }
+
+            return (
+                <div className="flex flex-col items-center justify-center h-full w-full p-6 animate-fadeIn relative">
+                <div className="w-full bg-[#fdfbf7] p-8 rounded-3xl shadow-2xl border-4 border-[#d7ccc8] text-center relative overflow-hidden mt-8 max-w-sm">
+                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/paper.png')] opacity-40"></div>
+                    
+                    <div className="relative z-10 flex flex-col items-center">
+                        {/* Enlarged Image */}
+                        <div className="w-40 h-40 mb-6 flex items-center justify-center">
+                            <img src={emoImage} alt="评价" className="w-full h-full object-contain drop-shadow-lg" />
+                        </div>
+
+                        <div className={`text-4xl font-serif font-bold mb-3 ${colorClass} tracking-widest drop-shadow-sm`}>{title}</div>
+                        
+                        <div className="flex gap-2 mb-6">
+                            {[1, 2, 3].map(star => (
+                                <Star 
+                                    key={star} 
+                                    size={32} 
+                                    fill={star <= stars ? "#D4AF37" : "#d7ccc8"} 
+                                    stroke={star <= stars ? "#8d6e63" : "#a1887f"}
+                                />
+                            ))}
+                        </div>
+                        
+                        <p className="text-center text-[#5d4037] mb-6 leading-relaxed font-serif text-base italic">“ {description} ”</p>
+
+                        {/* Level 3 Success Button */}
+                        {levelId === 3 && stars > 0 ? (
+                            <button
+                                onClick={() => setShowRewardModal(true)}
+                                className="w-full py-4 bg-[#3e2723] text-[#f4e4bc] rounded-xl hover:bg-[#4e342e] transition-colors flex items-center justify-center gap-2 text-lg font-serif border-2 border-[#5d4037] shadow-lg animate-pulse"
+                            >
+                                <Check size={24} /> <span>完成</span>
+                            </button>
+                        ) : (
+                            // Standard Buttons for L1/L2 or Fail
+                            <div className="w-full flex gap-3">
+                                <button 
+                                    onClick={onSelectLevel}
+                                    className="flex-1 py-3 bg-[#efebe9] text-[#5d4037] border-2 border-[#d7ccc8] rounded-xl hover:bg-[#d7ccc8] transition-colors flex items-center justify-center gap-2 text-sm font-serif"
+                                >
+                                    <Layers size={18} /> 返回选关
+                                </button>
+                                <button 
+                                    onClick={onRestart}
+                                    className="flex-1 py-3 bg-[#3e2723] text-[#f4e4bc] rounded-xl hover:bg-[#4e342e] transition-colors flex items-center justify-center gap-2 text-sm font-serif border-2 border-[#5d4037] shadow-lg"
+                                >
+                                    <RotateCcw size={18} /> 再来一次
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Reward Modal */}
+                {showRewardModal && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-6">
+                        <div className="bg-[#f4e4bc] w-full max-w-sm rounded-xl border-4 border-[#5d4037] shadow-2xl p-6 relative flex flex-col items-center">
+                            <h3 className="text-xl font-serif font-bold text-[#3e2723] mb-6 text-center tracking-wider leading-relaxed">恭喜你完成<br/>云纹漆鼎的制作！</h3>
+                            
+                            {/* Product Placeholder */}
+                            <div className="w-48 h-48 mb-8 flex items-center justify-center">
+                                 <img src="images/shimeinaqian.png" alt="云纹漆鼎" className="w-full h-full object-contain" />
+                            </div>
+
+                            {/* Rewards */}
+                            <div className="w-full flex justify-center gap-8 mb-8 bg-[#efebe9]/50 p-4 rounded-xl border border-[#d7ccc8]">
+                                <div className="flex flex-col items-center">
+                                    <img src="images/shituqing.png" alt="师徒情" className="w-10 h-10 mb-2" />
+                                    <span className="text-sm text-[#5d4037] font-bold font-mono">x360</span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <img src="images/qibi.png" alt="漆币" className="w-10 h-10 mb-2" />
+                                    <span className="text-sm text-[#5d4037] font-bold font-mono">x1000</span>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={onSelectLevel}
+                                className="w-full py-3 bg-[#D4AF37] text-[#3e2723] rounded-lg shadow-lg font-bold tracking-widest hover:bg-[#C09A30] transition-colors border-2 border-[#3e2723] flex items-center justify-center gap-2"
+                            >
+                                <Gift size={20} /> 领取奖励
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                </div>
+            );
+        };
+
+        // --- Main Component ---
+        const LacquerGame = () => {
+            const [gameState, setGameState] = useState('intro'); // intro, level_select, painting, polishing, result
+            const [currentLevelId, setCurrentLevelId] = useState(null);
+            const [stamina, setStamina] = useState(INITIAL_STAMINA);
+            const [unlockedLevels, setUnlockedLevels] = useState([1]);
+            const [isPaused, setIsPaused] = useState(false);
+            const [showConfirmStart, setShowConfirmStart] = useState(null); 
+            const [resultStars, setResultStars] = useState(0);
+            const [finalGrid, setFinalGrid] = useState(null); // Capture final grid for polishing
+
+            const handleStartLevelAttempt = (levelId) => { setShowConfirmStart(levelId); };
+
+            const confirmStartLevel = () => {
+                if (stamina >= GAME_COST) {
+                setStamina(prev => prev - GAME_COST);
+                setCurrentLevelId(showConfirmStart);
+                setGameState('painting');
+                setShowConfirmStart(null);
+                } else {
+                alert("体力不足！"); 
+                setShowConfirmStart(null);
+                }
+            };
+
+            const handlePaintingComplete = (stars, gridSnapshot) => {
+                setResultStars(stars);
+                if (currentLevelId === 3) {
+                    setFinalGrid(gridSnapshot);
+                    setGameState('polishing');
+                } else {
+                    handlePostStageComplete();
+                }
+            };
+
+            const handleFail = () => {
+                setResultStars(0);
+                setGameState('result');
+            };
+
+            const handlePostStageComplete = () => {
+                if (currentLevelId === 1) {
+                if (!unlockedLevels.includes(2)) setUnlockedLevels(p => [...p, 2]);
+                setGameState('result');
+                } else if (currentLevelId === 2) {
+                if (!unlockedLevels.includes(3)) setUnlockedLevels(p => [...p, 3]);
+                setGameState('result');
+                } else if (currentLevelId === 3) {
+                setGameState('result');
+                }
+            };
+
+            const handleRestart = () => {
+                if (currentLevelId && stamina >= GAME_COST) {
+                    setStamina(prev => prev - GAME_COST);
+                    setGameState('painting');
+                } else if (currentLevelId) {
+                    alert("体力不足！");
+                    setGameState('level_select');
+                }
+            };
+
+            return (
+                <div className="flex items-center justify-center h-screen w-full bg-black overflow-hidden font-sans">
+                <div className="relative w-full h-full max-w-[375px] max-h-[812px] bg-[#f4e4bc] md:rounded-[40px] shadow-[0_0_60px_rgba(255,255,255,0.1)] overflow-hidden border-[8px] border-gray-600 select-none">
+                    <div className="absolute inset-0 pointer-events-none opacity-60 mix-blend-multiply z-0" 
+                        style={{backgroundImage: `url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.15'/%3E%3C/svg%3E")`}}>
+                    </div>
+                    
+                    {gameState !== 'intro' && gameState !== 'level_select' && (
+                    <GameHeader 
+                        stamina={stamina} 
+                        showPause={gameState === 'painting'}
+                        onPause={() => setIsPaused(true)}
+                    />
+                    )}
+
+                    <div className="relative z-10 h-full flex flex-col">
+                        {gameState === 'intro' && <StartScreen onStart={() => setGameState('level_select')} />}
+
+                        {gameState === 'level_select' && (
+                            <div className="h-full relative">
+                                <GameHeader stamina={stamina} showPause={false} />
+                                <LevelSelectScreen 
+                                onSelectLevel={handleStartLevelAttempt} 
+                                currentLevelId={currentLevelId}
+                                unlockedLevels={unlockedLevels}
+                                />
+                            </div>
+                        )}
+                        
+                        {gameState === 'painting' && (
+                            <VasePairMatchStage 
+                                levelId={currentLevelId}
+                                stamina={stamina}
+                                talismans={0}
+                                consumeStamina={() => true} 
+                                addStamina={(amt) => setStamina(s => Math.min(s + amt, MAX_STAMINA))}
+                                onComplete={handlePaintingComplete}
+                                onFail={handleFail}
+                            />
+                        )}
+
+                        {gameState === 'polishing' && (
+                            <PolishingStage 
+                                gridState={finalGrid} 
+                                onComplete={() => setGameState('result')} 
+                            />
+                        )}
+                        
+                        {gameState === 'result' && (
+                            <ResultStage 
+                                stars={resultStars} 
+                                levelId={currentLevelId}
+                                onSelectLevel={() => setGameState('level_select')}
+                                onRestart={handleRestart}
+                            />
+                        )}
+                    </div>
+
+                    {/* Modals */}
+                    {showConfirmStart && (
+                    <Modal title="开启工序" onClose={() => setShowConfirmStart(null)}>
+                        <div className="text-center font-serif text-[#5d4037]">
+                        <p className="mb-4 text-lg">是否消耗 <span className="font-bold text-[#d32f2f]">{GAME_COST}体力</span> 开始?</p>
+                        <p className="mb-6 text-sm opacity-70">关卡: {LEVELS.find(l => l.id === showConfirmStart)?.title}</p>
+                        <div className="flex gap-4 justify-center">
+                            <button onClick={() => setShowConfirmStart(null)} className="px-4 py-2 border-2 border-[#8d6e63] text-[#8d6e63] rounded-lg hover:bg-[#efebe9]">取消</button>
+                            <button onClick={confirmStartLevel} className="px-6 py-2 bg-[#3e2723] text-[#f4e4bc] rounded-lg shadow-md hover:bg-[#4e342e]">确定</button>
+                        </div>
+                        </div>
+                    </Modal>
+                    )}
+
+                    {isPaused && (
+                    <Modal title="暂停" onClose={() => setIsPaused(false)}>
+                        <div className="flex flex-col gap-4 p-2">
+                        <button onClick={() => setIsPaused(false)} className="w-full py-3 bg-[#3e2723] text-[#f4e4bc] rounded-lg shadow-md flex items-center justify-center gap-2"><Play size={18} /> 继续制作</button>
+                        <button onClick={() => { setIsPaused(false); setGameState('level_select'); }} className="w-full py-3 bg-[#efebe9] text-[#5d4037] border-2 border-[#d7ccc8] rounded-lg flex items-center justify-center gap-2"><Layers size={18} /> 返回关卡选择</button>
+                        <button onClick={() => { setIsPaused(false); setGameState('intro'); }} className="w-full py-3 bg-[#efebe9] text-[#5d4037] border-2 border-[#d7ccc8] rounded-lg flex items-center justify-center gap-2"><Home size={18} /> 回到首页</button>
+                        </div>
+                    </Modal>
+                    )}
+                </div>
+            </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<LacquerGame />);
+    </script>
+</body>
+</html>

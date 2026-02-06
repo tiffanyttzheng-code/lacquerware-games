@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Day 1: 旋木成胎</title>
+    <style>
+        /* === 基础设定 (浅色木质主题) === */
+        :root {
+            --bg-color: #e6dcc3;       /* 浅卡其底色 */
+            --wood-dark: #5d4037;      /* 深木纹色 */
+            --text-main: #3e2723;      /* 深栗色文字 */
+            --gold-accent: #a67c00;    /* 古铜金 (UI主色) */
+            --star-yellow: #ffc107;    /* 星星黄色 */
+            --cinnabar: #c62828;       /* 朱红 */
+            --overlay-bg: rgba(235, 225, 210, 0.95); /* 浅色遮罩 */
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a; /* 网页背景保持深色以衬托手机 */
+            font-family: 'Songti SC', 'Noto Serif SC', 'SimSun', serif; 
+            touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* 📱 手机容器 */
+        #phone-container {
+            position: relative;
+            background-color: var(--bg-color);
+            /* 木质纹理生成 */
+            background-image: 
+                repeating-linear-gradient(45deg, rgba(93, 64, 55, 0.03) 0px, rgba(93, 64, 55, 0.03) 1px, transparent 1px, transparent 12px),
+                linear-gradient(to bottom, #e6dcc3, #d7cbb0);
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            height: 90vh;
+            width: calc(90vh * (375 / 812));
+            border: 8px solid #2d241f; /* 边框改为深胡桃木色 */
+            border-radius: 40px;
+        }
+
+        @media (max-width: 500px) {
+            #phone-container {
+                width: 100vw;
+                height: 100vh;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+            }
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* === 顶部区域重构 (暂停按钮 + 体力条) === */
+        #stamina-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 70px; /* 高度增加 */
+            /* 浅色渐变顶栏 */
+            background: linear-gradient(to bottom, rgba(230, 220, 195, 1) 40%, rgba(230, 220, 195, 0));
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            /* 左侧留出空间给暂停按钮，防止重叠 */
+            padding: 0 24px 0 80px; 
+            box-sizing: border-box;
+        }
+
+        /* 暂停按钮 - 移至左上角，整合进顶部栏 */
+        #custom-pause-btn {
+            position: absolute;
+            top: 15px; /* 垂直居中于顶部栏 */
+            left: 20px;
+            width: 44px; /* 按钮加大 */
+            height: 44px;
+            border: 3px solid rgba(62, 39, 35, 0.4);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--text-main);
+            z-index: 25; /* 层级高于体力条背景 */
+            background: rgba(255,255,255,0.4);
+            font-size: 14px;
+            font-weight: 900;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #custom-pause-btn:active {
+            border-color: var(--text-main);
+            background: rgba(62, 39, 35, 0.1);
+            transform: scale(0.95);
+        }
+
+        #stamina-icon-img {
+            width: 24px; /* 图标加大 */
+            height: 24px;
+            margin-right: 12px;
+            opacity: 1;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1));
+        }
+
+        #stamina-bar-bg {
+            flex: 1;
+            height: 10px; /* 槽加粗 */
+            background: rgba(62, 39, 35, 0.15);
+            border-radius: 5px;
+            overflow: hidden;
+            margin-right: 15px;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        #stamina-bar-fill {
+            height: 100%;
+            background: var(--gold-accent);
+            width: 66%;
+            transition: width 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+        }
+
+        #stamina-text {
+            font-size: 18px; /* 字体加大 */
+            color: var(--text-main);
+            font-weight: 900;
+            font-family: 'Helvetica Neue', sans-serif;
+            letter-spacing: 0.5px;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.8);
+        }
+
+        /* === 游戏内 HUD (数据栏) - 下移避免干扰 === */
+        #game-hud {
+            position: absolute;
+            top: 85px; /* 彻底移出顶部栏区域 */
+            width: 100%;
+            display: flex;
+            justify-content: space-around; /* 分散对齐，视觉更平衡 */
+            padding: 0 10px;
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .hud-item {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.3); /* 轻微背景增强可读性 */
+            padding: 5px 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(62, 39, 35, 0.05);
+        }
+
+        .hud-label {
+            font-size: 14px; /* 加大 */
+            color: rgba(62, 39, 35, 0.7);
+            margin-bottom: 2px;
+            letter-spacing: 2px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .hud-value {
+            font-size: 32px; /* 显著加大 */
+            color: var(--text-main);
+            font-weight: 900;
+            text-shadow: 0 2px 0 rgba(255,255,255,0.6);
+            line-height: 1;
+            margin-top: 5px;
+        }
+
+        /* === 遮罩层 === */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--overlay-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            color: var(--text-main);
+            text-align: center;
+            transition: opacity 0.3s ease;
+        }
+
+        .overlay h1 {
+            font-size: 48px; /* 加大 */
+            font-weight: 900;
+            margin-bottom: 15px;
+            letter-spacing: 12px;
+            color: var(--text-main);
+            text-shadow: 2px 2px 0 rgba(255,255,255,0.6);
+            border-bottom: 4px solid var(--text-main);
+            padding-bottom: 25px;
+            margin-top: 0;
+        }
+
+        .overlay p {
+            font-size: 16px; /* 加大 */
+            color: rgba(62, 39, 35, 0.8);
+            margin-bottom: 60px;
+            letter-spacing: 4px;
+            font-weight: 700;
+        }
+
+        /* === 按钮设计 === */
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px; /* 间距调小 (原20px) */
+            width: 70%; /* 宽度稍微调大以适应小按钮 */
+        }
+
+        button {
+            padding: 12px 0; /* 高度调小 (原16px) */
+            background: transparent;
+            color: var(--text-main);
+            border: 3px solid var(--text-main); /* 边框加粗 */
+            border-radius: 6px;
+            font-size: 18px; /* 字号调小 (原20px) */
+            font-weight: 900;
+            letter-spacing: 4px; /* 字间距调小 (原6px) */
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            font-family: inherit;
+            box-shadow: 0 4px 0 rgba(62, 39, 35, 0.15);
+        }
+
+        button:active {
+            transform: translateY(3px);
+            box-shadow: none;
+            background: rgba(62, 39, 35, 0.05);
+        }
+
+        button.primary {
+            background: var(--text-main);
+            color: #e6dcc3;
+            border-color: var(--text-main);
+        }
+        
+        button.primary:active {
+            background: #2c1e15;
+        }
+
+        /* === 结算界面 (放大版) === */
+        #result-title {
+            font-size: 64px; /* 巨型标题 */
+            margin-bottom: 5px; /* 减少间距 */
+            letter-spacing: 10px;
+            text-shadow: 3px 3px 0 rgba(255,255,255,0.5);
+        }
+
+        #result-img {
+            width: 280px; /* 超大图片 */
+            height: 280px;
+            margin-bottom: -20px; /* 向上收紧间距 */
+            border: none;
+            padding: 0;
+            object-fit: contain;
+            background: transparent;
+            border-radius: 0;
+            filter: drop-shadow(0 15px 30px rgba(0,0,0,0.25)); /* 投影加强 */
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        #star-rating {
+            font-size: 48px; /* 星星极大 */
+            color: var(--star-yellow); 
+            margin-bottom: 0px; /* 间距进一步调小 (原5px) */
+            letter-spacing: 15px;
+            font-weight: 900;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        #result-desc {
+            font-weight: 800;
+            font-size: 24px; /* 描述文字加大 */
+            color: var(--text-main);
+            line-height: 1.5;
+            margin-bottom: 15px; /* 间距调小 (原20px) */
+            letter-spacing: 2px;
+        }
+
+        /* === 确认弹窗 === */
+        #confirm-modal {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(62, 39, 35, 0.4);
+            backdrop-filter: blur(4px);
+            z-index: 60;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #fdfbf7;
+            border: 3px solid var(--text-main);
+            padding: 40px;
+            text-align: center;
+            width: 80%;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+            border-radius: 12px;
+        }
+        .modal-content h3 {
+            font-weight: 900;
+            color: var(--text-main);
+            margin: 0 0 15px 0;
+            letter-spacing: 4px;
+            font-size: 28px; /* 加大 */
+        }
+        .modal-content p {
+            color: rgba(62, 39, 35, 0.9);
+            font-weight: 700;
+            margin: 0 0 35px 0;
+            font-size: 16px;
+        }
+        .modal-btn-row {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+        }
+        .modal-btn-row button {
+            padding: 12px 30px;
+            font-size: 16px;
+            border-width: 2px;
+            width: auto;
+        }
+
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <div id="phone-container">
+        
+        <!-- 顶部通栏: 包含暂停按钮和体力条 -->
+        <div id="stamina-container">
+            <!-- 暂停按钮移到这里，绝对定位在左侧 -->
+            <button id="custom-pause-btn" onclick="togglePause()">||</button>
+            
+            <img id="stamina-icon-img" src="images/power.png" alt="Power">
+            <div id="stamina-bar-bg">
+                <div id="stamina-bar-fill"></div>
+            </div>
+            <div id="stamina-text">120/180</div>
+        </div>
+
+        <!-- 游戏 HUD (下移) -->
+        <div id="game-hud" class="hidden">
+            <div class="hud-item">
+                <div class="hud-label">修整进度</div>
+                <div class="hud-value" id="hud-progress">0/10</div>
+            </div>
+            <div class="hud-item">
+                <div class="hud-label">胎体损伤</div>
+                <div class="hud-value" id="hud-mistakes" style="color:var(--cinnabar)">0</div>
+            </div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="overlay">
+            <h1>旋木成胎</h1>
+            <p>Day 1 · 制胎工艺<br><span style="color:rgba(62,39,35,0.5); font-weight:700; font-size:14px; margin-top:10px; display:inline-block;">消耗 20 体力 / 次</span></p>
+            <div class="btn-group">
+                <button onclick="tryStartLevel(0)">第一章 · 初试</button>
+                <button onclick="tryStartLevel(1)">第二章 · 精修</button>
+                <button onclick="tryStartLevel(2)" class="primary">第三章 · 入神</button>
+            </div>
+        </div>
+
+        <!-- Pause Menu -->
+        <div id="pause-menu" class="overlay hidden">
+            <h1>暂停</h1>
+            <div class="btn-group">
+                <button class="primary" onclick="togglePause()">继续旋削</button>
+                <button onclick="tryStartLevel(currentLevelIndex)">重新开始</button>
+                <button onclick="showStartScreen()">返回主页</button>
+            </div>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="overlay hidden">
+            <h1 id="result-title">完成</h1>
+            
+            <img id="result-img" src="" alt="评价">
+            
+            <div id="star-rating"></div>
+            
+            <p id="result-desc">结算中...</p>
+            
+            <div class="btn-group">
+                <!-- 新增：进入下一章（默认隐藏） -->
+                <button id="result-next-btn" class="primary hidden">进入下一章</button>
+                <!-- 始终存在：再来一次 -->
+                <button id="result-retry-btn" onclick="tryStartLevel(currentLevelIndex)">再来一次</button>
+                <button id="result-main-btn" onclick="showStartScreen()">返回主页</button>
+            </div>
+        </div>
+
+        <!-- Confirm Modal -->
+        <div id="confirm-modal" class="hidden">
+            <div class="modal-content">
+                <h3>确认开启</h3>
+                <p>将消耗 20 体力</p>
+                <div class="modal-btn-row">
+                    <button onclick="closeConfirm()">取消</button>
+                    <button class="primary" onclick="confirmStart()">确定</button>
+                </div>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // UI Elements
+        const hudLayer = document.getElementById('game-hud');
+        const hudProgress = document.getElementById('hud-progress');
+        const hudMistakes = document.getElementById('hud-mistakes');
+        
+        const staminaFill = document.getElementById('stamina-bar-fill');
+        const staminaText = document.getElementById('stamina-text');
+        
+        const startScreen = document.getElementById('start-screen');
+        const pauseMenu = document.getElementById('pause-menu');
+        const resultScreen = document.getElementById('result-screen');
+        const confirmModal = document.getElementById('confirm-modal');
+        
+        const resultTitle = document.getElementById('result-title');
+        const resultImg = document.getElementById('result-img');
+        const starRating = document.getElementById('star-rating');
+        const resultDesc = document.getElementById('result-desc');
+        const resultMainBtn = document.getElementById('result-main-btn');
+        const resultNextBtn = document.getElementById('result-next-btn');
+        const resultRetryBtn = document.getElementById('result-retry-btn');
+
+        // ==========================================
+        // ⚙️ 全局配置与状态
+        // ==========================================
+        
+        let stamina = 120;
+        const maxStamina = 180;
+        const costPerLevel = 20;
+
+        const levels = [
+            {
+                name: "第一章",
+                baseSpeed: 0.013,
+                variableSpeed: false, 
+                wasteCount: 5,        
+                wasteGap: 0.1         
+            },
+            {
+                name: "第二章",
+                baseSpeed: 0.018,
+                variableSpeed: false,
+                wasteCount: 8,       
+                wasteGap: 0.12
+            },
+            {
+                name: "第三章",
+                baseSpeed: 0.012,
+                variableSpeed: true,  
+                wasteCount: 11,
+                wasteGap: 0.1
+            }
+        ];
+
+        const LOGICAL_WIDTH = 375;
+        const LOGICAL_HEIGHT = 812;
+        // 背景色变量，需要与 CSS 配合，这里设为透明，让 Canvas 下方的 CSS 木纹显示出来
+        const BG_COLOR = 'rgba(230, 220, 195, 0)'; 
+
+        let gameState = 'start'; 
+        let currentLevelIndex = 0;
+        let pendingLevelIndex = 0;
+        
+        let rotationAngle = 0; 
+        let currentSpeed = 0;
+        let time = 0; 
+        
+        let particles = []; 
+        let wasteSegments = [];
+        
+        let mistakes = 0;
+        const maxMistakes = 3; 
+        let eliminatedCount = 0;
+        let totalWasteCount = 0;
+
+        let centerX, centerY;
+        let woodRadius = 100; 
+        let wasteHeight = 40; 
+        let shakeOffset = {x:0, y:0};
+
+        function initDimensions() {
+            canvas.width = LOGICAL_WIDTH;
+            canvas.height = LOGICAL_HEIGHT;
+            centerX = LOGICAL_WIDTH / 2;
+            // ⬇️ 修改：重心下移，为顶部变大的UI留出空间 (原 +50 -> +60)
+            centerY = LOGICAL_HEIGHT / 2 + 60; 
+            updateStaminaUI();
+        }
+
+        // ================= 体力与流程控制 =================
+
+        function updateStaminaUI() {
+            let pct = (stamina / maxStamina) * 100;
+            staminaFill.style.width = pct + "%";
+            staminaText.innerText = `${stamina}/${maxStamina}`;
+            
+            if(stamina < 20) {
+                staminaFill.style.background = "#c62828"; 
+            } else {
+                staminaFill.style.background = "#a67c00"; 
+            }
+        }
+
+        function tryStartLevel(index) {
+            if (stamina < costPerLevel) {
+                alert("体力不足。");
+                return;
+            }
+            pendingLevelIndex = index;
+            confirmModal.classList.remove('hidden');
+        }
+
+        function closeConfirm() {
+            confirmModal.classList.add('hidden');
+        }
+
+        function confirmStart() {
+            closeConfirm();
+            stamina -= costPerLevel;
+            updateStaminaUI();
+            currentLevelIndex = pendingLevelIndex;
+            startGame();
+        }
+
+        function startGame() {
+            let config = levels[currentLevelIndex];
+            gameState = 'playing';
+            
+            startScreen.classList.add('hidden');
+            pauseMenu.classList.add('hidden');
+            resultScreen.classList.add('hidden');
+            hudLayer.classList.remove('hidden');
+            
+            rotationAngle = 0;
+            time = 0;
+            currentSpeed = config.baseSpeed;
+            particles = [];
+            wasteSegments = [];
+            mistakes = 0;
+            eliminatedCount = 0;
+            totalWasteCount = config.wasteCount; 
+            
+            updateHUD();
+            generateWaste(config);
+            loop(); 
+        }
+
+        function updateHUD() {
+            hudProgress.innerText = `${eliminatedCount} / ${totalWasteCount}`;
+            hudMistakes.innerText = `${mistakes}`;
+        }
+
+        function showStartScreen() {
+            gameState = 'start';
+            startScreen.classList.remove('hidden');
+            pauseMenu.classList.add('hidden');
+            resultScreen.classList.add('hidden');
+            hudLayer.classList.add('hidden');
+        }
+
+        function togglePause() {
+            if (gameState === 'playing') {
+                gameState = 'paused';
+                pauseMenu.classList.remove('hidden');
+            } else if (gameState === 'paused') {
+                gameState = 'playing';
+                pauseMenu.classList.add('hidden');
+                loop();
+            }
+        }
+
+        // ================= 游戏逻辑 =================
+
+        function generateWaste(config) {
+            let totalAngle = Math.PI * 2;
+            let segmentAngle = totalAngle / config.wasteCount;
+            totalWasteCount = 0;
+            
+            for(let i=0; i<config.wasteCount; i++) {
+                let offset = Math.random() * 0.1;
+                let start = i * segmentAngle + offset;
+                let end = (i + 1) * segmentAngle - config.wasteGap + offset;
+                
+                if(end > start) {
+                     wasteSegments.push({
+                        start: start,
+                        end: end,
+                        active: true,
+                        // 废料颜色改为深栗色系
+                        color: `hsl(${20 + Math.random()*5}, ${20+Math.random()*10}%, ${20 + Math.random()*10}%)`
+                    });
+                    totalWasteCount++;
+                }
+            }
+            updateHUD();
+        }
+
+        function loop() {
+            if (gameState !== 'playing') return;
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        function update() {
+            let config = levels[currentLevelIndex];
+
+            shakeOffset.x *= 0.8;
+            shakeOffset.y *= 0.8;
+            if(Math.abs(shakeOffset.x) < 0.5) shakeOffset.x = 0;
+            if(Math.abs(shakeOffset.y) < 0.5) shakeOffset.y = 0;
+
+            if (config.variableSpeed) {
+                time += 0.05;
+                currentSpeed = config.baseSpeed + Math.sin(time) * 0.01;
+                if(currentSpeed < 0.005) currentSpeed = 0.005;
+            } else {
+                currentSpeed = config.baseSpeed;
+            }
+
+            rotationAngle += currentSpeed;
+            
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.5;
+                p.life -= 0.02;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            let remaining = wasteSegments.filter(s => s.active).length;
+            if (remaining === 0) {
+                if (gameState === 'playing') levelComplete();
+            }
+        }
+
+        // ================= 结算逻辑 =================
+
+        function levelComplete() {
+            gameState = 'level_complete';
+            
+            let stars = 0;
+            let imgName = "emo-angry.png";
+            let color = "#ffc107"; // 默认星色(黄色)
+
+            if (mistakes === 0) {
+                stars = 3;
+                imgName = "emo-satisfied.png";
+            } else if (mistakes === 1) {
+                stars = 2;
+                imgName = "emo-good.png";
+            } else {
+                stars = 1;
+                imgName = "emo-angry.png";
+                color = "#c62828"; // 失败时文字变红，但星星还是黄色(通过下面starRating.style.color覆盖)
+            }
+
+            resultImg.src = `images/${imgName}`;
+            // 移除默认背景色，改为透明，以配合无边框设计
+            resultImg.onerror = function() { this.style.opacity = '0.5'; }; 
+
+            starRating.innerHTML = "★".repeat(stars) + "<span style='opacity:0.2'>" + "★".repeat(3-stars) + "</span>";
+            starRating.style.color = "#ffc107"; // 强制星星为黄色
+            
+            resultTitle.innerText = "挑战完成";
+            resultTitle.style.color = mistakes > 1 ? "#c62828" : "#a67c00";
+            
+            resultDesc.innerHTML = `损伤计数：${mistakes}<br><span style="font-size:16px; opacity:0.6; margin-top:10px; display:block">下一工序待解锁</span>`;
+            
+            // 按钮逻辑：同时显示“下一章”(如果条件满足) 和 “再来一次”
+            
+            // 1. 下一章按钮
+            if (currentLevelIndex < levels.length - 1 && stars >= 1) {
+                resultNextBtn.classList.remove('hidden');
+                resultNextBtn.onclick = () => {
+                    if(stamina >= 20) {
+                        tryStartLevel(currentLevelIndex + 1);
+                    } else {
+                        alert("体力不足。");
+                        showStartScreen();
+                    }
+                };
+                // 如果有下一关，“再来一次”作为次要按钮
+                resultRetryBtn.className = ""; 
+            } else {
+                resultNextBtn.classList.add('hidden');
+                // 如果没有下一关，“再来一次”作为主要按钮
+                resultRetryBtn.className = "primary";
+            }
+
+            // 2. 再来一次按钮
+            // 已经在HTML中定义，这里确保显示并绑定事件
+            resultRetryBtn.onclick = () => tryStartLevel(currentLevelIndex);
+
+            setTimeout(() => {
+                resultScreen.classList.remove('hidden');
+                hudLayer.classList.add('hidden');
+            }, 600);
+        }
+
+        function gameOver() {
+            gameState = 'gameover';
+            
+            resultTitle.innerText = "制胎失败";
+            resultTitle.style.color = "#c62828";
+            
+            resultImg.src = "images/emo-angry.png";
+            starRating.innerHTML = "<span style='opacity:0.2'>★★★</span>"; 
+            starRating.style.color = "#ffc107";
+
+            resultDesc.innerText = "胎体已损毁，无法继续";
+            
+            // 失败时隐藏下一章
+            resultNextBtn.classList.add('hidden');
+            
+            // 再来一次作为主按钮
+            resultRetryBtn.className = "primary";
+            resultRetryBtn.onclick = () => tryStartLevel(currentLevelIndex);
+
+            setTimeout(() => {
+                resultScreen.classList.remove('hidden');
+                hudLayer.classList.add('hidden');
+            }, 300);
+        }
+
+        // ================= 交互 =================
+
+        function handleInput(e) {
+            e.preventDefault(); 
+            if (gameState !== 'playing') return;
+            triggerKnife();
+        }
+
+        function triggerKnife() {
+            let knifeAngleInWoodSpace = (Math.PI / 2 - rotationAngle) % (Math.PI * 2);
+            if (knifeAngleInWoodSpace < 0) knifeAngleInWoodSpace += Math.PI * 2;
+
+            let hitWaste = false;
+
+            for (let seg of wasteSegments) {
+                if (seg.active) {
+                    if (knifeAngleInWoodSpace >= seg.start && knifeAngleInWoodSpace <= seg.end) {
+                        seg.active = false;
+                        hitWaste = true;
+                        eliminatedCount++;
+                        updateHUD();
+                        spawnParticles('#5d4037'); // 废料碎屑颜色
+                        break;
+                    }
+                }
+            }
+
+            if (!hitWaste) {
+                mistakes++;
+                updateHUD();
+                
+                shakeOffset.x = (Math.random() - 0.5) * 20;
+                shakeOffset.y = (Math.random() - 0.5) * 20;
+                
+                spawnParticles('#c62828'); 
+
+                if (mistakes > maxMistakes) {
+                    gameOver();
+                }
+            }
+        }
+
+        function spawnParticles(color) {
+            for(let i=0; i<6; i++) {
+                particles.push({
+                    x: centerX,
+                    y: centerY + woodRadius + wasteHeight,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 1) * 10,
+                    life: 1.0,
+                    r: Math.random() * Math.PI,
+                    size: Math.random() * 4 + 1,
+                    color: color
+                });
+            }
+        }
+
+        // ================= 绘图 =================
+
+        function draw() {
+            // 清空画布 (透明)
+            ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+            ctx.save();
+            ctx.translate(centerX + shakeOffset.x, centerY + shakeOffset.y);
+            ctx.rotate(rotationAngle);
+
+            // 1. 核心胎体 (在浅色背景上改用深檀木色)
+            ctx.beginPath();
+            ctx.arc(0, 0, woodRadius, 0, Math.PI * 2);
+            ctx.fillStyle = '#5d4037'; // 深木色
+            ctx.fill();
+            
+            // 2. 旋纹
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            for(let i=10; i<woodRadius; i+=8) { 
+                ctx.beginPath();
+                ctx.arc(0, 0, i, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // 3. 废料
+            wasteSegments.forEach(seg => {
+                if (seg.active) {
+                    ctx.beginPath();
+                    ctx.arc(0, 0, woodRadius + wasteHeight, seg.start, seg.end);
+                    ctx.arc(0, 0, woodRadius, seg.end, seg.start, true);
+                    ctx.fillStyle = seg.color; // CSS生成的深色
+                    ctx.fill();
+                    // 边缘
+                    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                    ctx.stroke();
+                }
+            });
+
+            ctx.restore();
+
+            // 4. 旋刀
+            let drawX = centerX + shakeOffset.x;
+            let drawY = centerY + shakeOffset.y;
+            
+            // 刀身 (深铁灰色)
+            ctx.fillStyle = '#424242'; 
+            ctx.beginPath();
+            ctx.moveTo(drawX - 3, drawY + woodRadius + wasteHeight + 50);
+            ctx.lineTo(drawX + 3, drawY + woodRadius + wasteHeight + 50);
+            ctx.lineTo(drawX, drawY + woodRadius + wasteHeight + 5);
+            ctx.fill();
+            
+            // 刀尖
+            ctx.fillStyle = '#d7ccc8';
+            ctx.beginPath();
+            ctx.arc(drawX, drawY + woodRadius + wasteHeight + 5, 2, 0, Math.PI*2);
+            ctx.fill();
+
+            // 粒子
+            particles.forEach(p => {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.r);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+                ctx.restore();
+            });
+        }
+
+        canvas.addEventListener('mousedown', handleInput);
+        canvas.addEventListener('touchstart', handleInput, {passive: false});
+
+        initDimensions();
+        showStartScreen(); 
+
+    </script>
+</body>
+</html>
