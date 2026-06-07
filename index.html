@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>制作工坊 - 数字非遗体验</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        /* 桌面端外围背景：增加一点宣纸底纹质感，让电脑预览不单调 */
+        body {
+            background-color: #e6dfd3; 
+            background-image: radial-gradient(#d5cbb8 1px, transparent 1px);
+            background-size: 20px 20px;
+            margin: 0;
+            padding: 0;
+            font-family: "Songti SC", "Noto Serif SC", serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 核心应用容器（手机框） */
+        #app-container {
+            width: 100vw;
+            height: 100vh;
+            max-width: 375px;
+            max-height: 812px;
+            background: linear-gradient(to bottom, #fdfbf7, #f4ecd8); /* 宣纸/米色质感 */
+            position: relative;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: calc(60px + var(--safe-top)) 24px calc(40px + var(--safe-bottom)) 24px;
+            box-sizing: border-box;
+            
+            /* 隐藏滚动条但保留滚动功能 */
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #app-container::-webkit-scrollbar {
+            display: none; /* Chrome, Safari and Opera */
+        }
+
+        /* 当在 VS Code Live Server (电脑宽屏) 中打开时，强制显示为精致的手机壳 */
+        @media (min-width: 400px) {
+            #app-container {
+                height: 90vh; /* 适配不同高度的电脑屏幕 */
+                border-radius: 40px;
+                border: 12px solid #ffffff; /* 模拟白色手机边框 */
+                box-shadow: 0 25px 50px -12px rgba(93, 64, 55, 0.3); /* 立体投影 */
+            }
+        }
+
+        .main-title {
+            font-size: 38px;
+            font-weight: 900;
+            color: #5d4037; /* 深木色 */
+            text-align: center;
+            margin-bottom: 12px;
+            letter-spacing: 4px;
+        }
+
+        .sub-title {
+            text-align: center;
+            font-size: 15px;
+            color: #8d6e63;
+            margin-bottom: 22px;
+            letter-spacing: 2px;
+            font-weight: bold;
+        }
+
+        .save-panel {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 0.9fr 1.1fr;
+            gap: 10px;
+            margin-bottom: 26px;
+        }
+
+        .save-stat {
+            border: 1px solid #e7dcc8;
+            background: rgba(255, 255, 255, 0.72);
+            padding: 12px 14px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .save-label {
+            font-size: 11px;
+            color: #8d6e63;
+            margin-bottom: 4px;
+            font-weight: 700;
+        }
+
+        .save-value {
+            font-size: 18px;
+            color: #4e342e;
+            font-weight: 900;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 8px;
+            overflow: hidden;
+            background: #eadfcd;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: #8c2218;
+            transition: width 0.25s ease;
+        }
+
+        .chapter-section {
+            width: 100%;
+            background: #ffffff;
+            border: 1px solid #e7dcc8;
+            border-radius: 16px;
+            padding: 22px 24px 24px;
+            margin-bottom: 26px;
+            box-shadow: 0 4px 16px rgba(93, 64, 55, 0.08);
+            box-sizing: border-box;
+            text-align: center;
+            min-height: 248px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .chapter-title {
+            color: #4e342e;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+            text-align: center;
+        }
+
+        .chapter-desc {
+            font-size: 13px;
+            color: #795548;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .level-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        .level-card {
+            min-height: 40px;
+            border-radius: 0;
+            background: transparent;
+            color: #4e342e;
+            box-shadow: none;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 34px;
+            box-sizing: border-box;
+            transition: background 0.2s, transform 0.2s;
+        }
+
+        .level-card:active, .level-card:hover {
+            background: #faf8f5;
+            transform: scale(0.99);
+        }
+
+        .level-card.locked {
+            opacity: 0.45;
+            filter: grayscale(0.6);
+            pointer-events: none;
+        }
+
+        .level-name {
+            font-size: 15px;
+            font-weight: 900;
+            letter-spacing: 1px;
+        }
+
+        .level-stars {
+            min-width: 64px;
+            text-align: right;
+            color: #d4a373;
+            font-size: 18px;
+            letter-spacing: 1px;
+        }
+
+        .continue-btn {
+            width: 100%;
+            border: 0;
+            border-radius: 999px;
+            background: #8c2218;
+            color: #fff;
+            padding: 13px 18px;
+            margin-bottom: 18px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            box-shadow: 0 8px 20px rgba(140, 34, 24, 0.22);
+            cursor: pointer;
+        }
+
+        #level-map {
+            width: 100%;
+        }
+
+        .enter-btn {
+            display: inline-block;
+            background: #8c2218; /* 传统漆红色 */
+            color: #ffffff;
+            padding: 10px 32px;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 14px;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(140, 34, 24, 0.3);
+            transition: background 0.2s;
+        }
+        
+        .enter-btn-outline {
+            display: inline-block;
+            background: transparent;
+            color: #8c2218;
+            border: 1px solid #8c2218;
+            padding: 10px 32px;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 14px;
+            letter-spacing: 1px;
+            transition: background 0.2s, color 0.2s;
+        }
+        
+        .game-card:hover .enter-btn-outline {
+            background: #8c2218;
+            color: #ffffff;
+        }
+
+        .footer {
+            margin-top: auto;
+            font-size: 12px;
+            color: #a1887f;
+            text-align: center;
+            padding-top: 30px;
+            padding-bottom: 10px;
+        }
+
+        .reset-progress {
+            margin-top: 12px;
+            border: 0;
+            background: transparent;
+            color: #8d6e63;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+    </style>
+    <script src="save.js"></script>
+</head>
+<body>
+
+<div id="app-container">
+    <div class="main-title">制作工坊</div>
+    <div class="sub-title">传统漆器工艺数字交互体验</div>
+
+    <div class="save-panel">
+        <div class="save-stat">
+            <div class="save-label">当前体力</div>
+            <div class="save-value" id="stamina-value">--/--</div>
+        </div>
+        <div class="save-stat">
+            <div class="save-label">总进度</div>
+            <div class="save-value" id="progress-value">--/--</div>
+            <div class="progress-track" aria-hidden="true">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <button class="continue-btn" id="continue-btn" type="button">继续制作</button>
+
+    <div id="level-map"></div>
+
+    <div class="footer">
+        <button class="reset-progress" id="reset-progress" type="button">重置制作进度</button>
+    </div>
+</div>
+
+<script>
+    const chapters = [
+        {
+            id: "game1",
+            title: "第一章：旋木成胎",
+            desc: "以漆为笔 · 补罅定基",
+            levels: [
+                { name: "初试", href: "game1.html?level=0" },
+                { name: "精修", href: "game1.html?level=1" },
+                { name: "入神", href: "game1.html?level=2" }
+            ]
+        },
+        {
+            id: "game2",
+            title: "第二章：漆骨初成",
+            desc: "层层髹涂 · 温润如玉",
+            levels: [
+                { name: "刮粗灰", href: "game2.html?level=SLOW" },
+                { name: "刮中灰", href: "game2.html?level=MED" },
+                { name: "刮细灰", href: "game2.html?level=FAST" }
+            ]
+        },
+        {
+            id: "game3",
+            title: "第三章：漆艺匠心",
+            desc: "水黑推光 · 鉴影照人",
+            levels: [
+                { name: "刷底漆", href: "game3.html?level=1" },
+                { name: "刷面漆", href: "game3.html?level=2" },
+                { name: "彩绘纹样", href: "game3.html?level=3" }
+            ]
+        }
+    ];
+
+    function isLevelUnlocked(save, chapterId, index) {
+        const game = save.games[chapterId];
+        if (!game.unlocked) return false;
+        if (index === 0) return true;
+        return game.stageStars[index - 1] > 0;
+    }
+
+    function findNextLevel(save) {
+        for (const chapter of chapters) {
+            const game = save.games[chapter.id];
+            for (let i = 0; i < chapter.levels.length; i++) {
+                if (isLevelUnlocked(save, chapter.id, i) && game.stageStars[i] === 0) {
+                    return chapter.levels[i];
+                }
+            }
+        }
+        return chapters[0].levels[0];
+    }
+
+    function findChapterLevel(save, chapter) {
+        const game = save.games[chapter.id];
+        for (let i = 0; i < chapter.levels.length; i++) {
+            if (isLevelUnlocked(save, chapter.id, i) && game.stageStars[i] < 3) {
+                return chapter.levels[i];
+            }
+        }
+        return chapter.levels[0];
+    }
+
+    function renderWorkshopSave() {
+        const save = LacquerSave.get();
+        const summary = LacquerSave.getSummary(save);
+        document.getElementById("stamina-value").innerText = `${save.stamina}/${save.maxStamina}`;
+        document.getElementById("progress-value").innerText = `${summary.totalStars}/${summary.maxStars}`;
+        document.getElementById("progress-fill").style.width = `${(summary.totalStars / summary.maxStars) * 100}%`;
+
+        const nextLevel = findNextLevel(save);
+        const continueBtn = document.getElementById("continue-btn");
+        continueBtn.onclick = () => window.location.href = nextLevel.href;
+
+        document.getElementById("level-map").innerHTML = chapters.map((chapter) => {
+            const game = save.games[chapter.id];
+            const levels = chapter.levels.map((level, index) => {
+                const unlocked = isLevelUnlocked(save, chapter.id, index);
+                const stars = game.stageStars[index] || 0;
+                const starText = unlocked ? "★".repeat(stars) + "☆".repeat(3 - stars) : "🔒";
+                return `
+                    <a class="level-card ${unlocked ? "" : "locked"}" href="${level.href}" aria-disabled="${!unlocked}">
+                        <span class="level-name">${level.name}</span>
+                        <span class="level-stars">${starText}</span>
+                    </a>
+                `;
+            }).join("");
+
+            return `
+                <section class="chapter-section">
+                    <div class="chapter-title">${chapter.title}</div>
+                    <div class="chapter-desc">${chapter.desc}</div>
+                    <div class="level-grid">${levels}</div>
+                </section>
+            `;
+        }).join("");
+    }
+
+    document.getElementById("reset-progress").addEventListener("click", () => {
+        if (confirm("确定重置体力、评级和章节解锁吗？")) {
+            LacquerSave.reset();
+            renderWorkshopSave();
+        }
+    });
+
+    renderWorkshopSave();
+</script>
+
+</body>
+</html>

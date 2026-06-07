@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(ls /d/个人推销/粒子专辑/ 2>&1)",
+      "Bash(git init *)",
+      "Bash(git remote *)"
+    ]
+  }
+}

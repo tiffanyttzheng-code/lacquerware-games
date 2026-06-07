@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>漆艺匠心 - 漆骨初成</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        body {
+            background-color: #121212;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: "Songti SC", "Noto Serif SC", serif;
+            color: white;
+            overscroll-behavior: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            touch-action: none;
+        }
+
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            max-width: 375px;
+            max-height: 812px;
+            position: relative;
+            overflow: hidden;
+            background: #2c2c2c;
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+        }
+
+        @media (min-width: 400px) {
+            #game-container {
+                border-radius: 40px;
+                border: 8px solid #333;
+            }
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .game-ui {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            padding: calc(20px + var(--safe-top)) 24px calc(40px + var(--safe-bottom)) 24px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .action-btn {
+            pointer-events: auto;
+            transition: transform 0.1s;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .action-btn:active { transform: scale(0.92); }
+        .action-btn.disabled { opacity: 0.3; filter: grayscale(1); }
+
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 100%;
+            margin-bottom: 20px;
+            pointer-events: auto;
+        }
+
+        .header-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .status-area {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .progress-container {
+            flex-grow: 1;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-right: 12px;
+        }
+
+        #progress-fill {
+            width: 100%;
+            height: 100%;
+            background: #d4a373;
+            transform: translateX(-100%);
+            transition: transform 0.1s linear;
+        }
+
+        .score-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 8px;
+        }
+
+        .progress-row {
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
+        .stars-container {
+            display: flex;
+            gap: 2px;
+        }
+
+        .star-icon {
+            font-size: 16px;
+            transition: color 0.3s, text-shadow 0.3s;
+        }
+        .star-gold { color: #d4a373; text-shadow: 0 0 8px rgba(212,163,115,0.8); }
+        .star-gray { color: #555; text-shadow: none; }
+
+        #hit-zone-flash {
+            position: absolute;
+            bottom: 35%;
+            left: 0;
+            right: 0;
+            height: 120px;
+            background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.4), transparent);
+            opacity: 0;
+            pointer-events: none;
+            mix-blend-mode: overlay; 
+        }
+
+        /* 高级感浅色遮罩 */
+        .overlay-mask {
+            position: absolute;
+            inset: 0;
+            background: rgba(245, 240, 230, 0.85); /* 宣纸质感的半透明米黄色 */
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            pointer-events: auto;
+            backdrop-filter: blur(12px); /* 强模糊突出主体 */
+        }
+
+        /* 无描边、带柔和阴影的高级卡片 */
+        .floating-card {
+            background: #fdfbf7; /* 极净的米白色 */
+            width: 85%;
+            padding: 40px 28px;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border: none; /* 彻底去除边框 */
+            box-shadow: 0 25px 50px rgba(93, 64, 55, 0.15); /* 柔和深邃的弥散阴影 */
+            max-width: 320px; 
+            color: #3e2723;
+        }
+
+        /* 标题样式：加入典雅的点缀线 */
+        .floating-card h2 {
+            color: #3e2723; 
+            font-weight: 900;
+            font-size: 24px;
+            margin-bottom: 35px;
+            text-align: center;
+            letter-spacing: 0.15em;
+            position: relative;
+        }
+        
+        .floating-card h2::after {
+            content: '';
+            position: absolute;
+            bottom: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 30px;
+            height: 3px;
+            background: #8c2218; /* 朱红点缀，提升传统文化质感 */
+            border-radius: 2px;
+        }
+
+        /* 高级无描边按钮 */
+        .menu-btn {
+            width: 100%;
+            padding: 16px; 
+            margin: 8px 0;
+            background: #ffffff; /* 纯白底色，与卡片形成微妙层级 */
+            color: #4e342e;
+            border: none; /* 无描边 */
+            border-radius: 12px; 
+            text-align: center;
+            font-weight: bold; 
+            font-size: 15px;
+            letter-spacing: 0.1em;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(93, 64, 55, 0.05); /* 极轻微的浮起感 */
+        }
+
+        .menu-btn:active { 
+            background: #f5eedc; 
+            transform: scale(0.97);
+            box-shadow: 0 2px 6px rgba(93, 64, 55, 0.03);
+        }
+        
+        /* 核心主按钮样式 (如“继续游戏”、“确认”) */
+        .menu-btn.primary {
+            background: #8c2218; /* 传统漆红 */
+            color: #ffffff;
+            box-shadow: 0 8px 20px rgba(140, 34, 24, 0.25);
+        }
+        
+        .menu-btn.primary:active {
+            background: #6b1810;
+        }
+
+        /* 次级辅助按钮样式 (如“返回工坊”) */
+        .menu-btn.secondary {
+            background: transparent;
+            box-shadow: none;
+            color: #8d6e63;
+            font-weight: normal;
+            margin-top: 12px;
+        }
+        
+        .menu-btn.secondary:active {
+            background: rgba(141, 110, 99, 0.08);
+        }
+
+        .workshop-back {
+            position: absolute;
+            top: 28px;
+            left: 28px;
+            width: auto;
+            padding: 12px 18px;
+            background: #fdfbf7;
+            box-shadow: 0 8px 20px rgba(93, 64, 55, 0.16);
+            color: #3e2723;
+            border: 1px solid rgba(141, 110, 99, 0.18);
+            border-radius: 999px;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .menu-btn.locked {
+            background: rgba(93, 64, 55, 0.04);
+            color: #aca19e;
+            box-shadow: none;
+            pointer-events: none;
+        }
+
+        .lock-icon {
+            position: absolute;
+            right: 16px;
+            opacity: 0.4;
+        }
+
+        .level-stars {
+            color: #d4a373;
+        }
+
+        .pause-btn {
+            width: 44px;
+            height: 44px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+        .pause-btn svg { width: 20px; height: 20px; fill: white; }
+
+        .hint-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .result-image-box {
+            width: 100%;
+            height: 140px;
+            margin: 16px 0 24px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .result-image-box img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 8px 16px rgba(0,0,0,0.15));
+        }
+        
+        .star-result-active { color: #d4a373; text-shadow: 0 0 8px rgba(212,163,115,0.4); }
+
+        #toast {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(62, 39, 35, 0.95);
+            padding: 14px 28px;
+            border-radius: 50px;
+            color: #fdfbf7;
+            font-size: 14px;
+            letter-spacing: 1px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 200;
+            white-space: nowrap;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pause-tip {
+            width: 100%;
+            box-sizing: border-box;
+            margin: -8px 0 18px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(140, 34, 24, 0.08);
+            color: #5d4037;
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.6;
+            text-align: left;
+        }
+
+        #intro-overlay {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+        }
+
+        #puttyLevel {
+            transition: height 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .start-btn-pulse {
+            background: #fdfbf7;
+            color: #8c2218;
+            padding: 16px 40px;
+            border-radius: 30px;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+            animation: pulse-scale 2s infinite;
+            pointer-events: auto;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+        @keyframes pulse-scale {
+            0% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 255, 255, 0.2); }
+            50% { transform: scale(1.05); box-shadow: 0 0 35px rgba(255, 255, 255, 0.4); }
+            100% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 255, 255, 0.2); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="game-ui" id="gameUI" style="display: none;">
+        <!-- 顶部导航栏 -->
+        <div class="header-bar">
+            <div id="pause-trigger" class="pause-btn">
+                <svg id="pauseIcon" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                <svg id="playIcon" viewBox="0 0 24 24" style="display:none;"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+
+            <div class="header-info">
+                <div id="staminaDisplay" class="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-sm">
+                    <span id="staminaText" class="text-sm font-bold text-[#d4a373]">180/180</span>
+                    <img src="images/power.png" class="w-4 h-4 object-contain" alt="power">
+                </div>
+                <div id="stateLabel" class="bg-black/40 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest border border-white/10 text-gray-300">
+                    刮粗灰（慢速）
+                </div>
+            </div>
+        </div>
+
+        <!-- 状态区域 -->
+        <div class="status-area">
+            <div class="score-row">
+                <div class="text-xs opacity-60" id="phaseText">工艺进行中</div>
+                <div id="scoreDisplay" class="text-xl font-black text-[#d4a373] tracking-widest leading-none">得分: 0</div>
+            </div>
+            <div class="progress-row">
+                <div id="percentText" class="text-[10px] w-8 font-bold text-right mr-2 opacity-80">0%</div>
+                <div class="progress-container">
+                    <div id="progress-fill"></div>
+                </div>
+                <div class="stars-container" id="liveStars">
+                    <span class="star-icon star-gray">★</span>
+                    <span class="star-icon star-gray">★</span>
+                    <span class="star-icon star-gray">★</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部工具区 -->
+        <div class="flex justify-between items-end pb-8 w-full mt-auto">
+            <div id="bowlBtn" class="action-btn">
+                <div class="w-28 h-28 bg-gray-200 rounded-full flex items-center justify-center shadow-xl relative overflow-hidden" style="border: 6px solid #444;">
+                    <div id="puttyLevel" class="absolute bottom-0 left-0 right-0 bg-white opacity-95" style="height: 0%;"></div>
+                    <span class="text-5xl z-10">🥣</span>
+                </div>
+            </div>
+
+            <div id="brushBtn" class="action-btn disabled">
+                <div class="w-24 h-24 flex items-center justify-center relative bg-black/40 rounded-full border border-white/10 shadow-lg">
+                    <span id="brushIcon" class="text-5xl transform -rotate-12">🖌️</span>
+                    <div id="brushStatus" class="absolute -top-1 -right-1 w-10 h-10 bg-white rounded-full border-[4px] border-[#1a1a1a] hidden flex items-center justify-center">
+                         <div class="w-3 h-3 bg-gray-300 rounded-full"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 中央提示按钮与说明文本框 -->
+    <!-- 改为 flex-col 垂直排列，并增加间距 gap-5 -->
+    <div id="centralHint" class="hint-text w-full flex flex-col items-center gap-5" style="display: none;">
+        
+        <!-- 纯文字玩法说明 -->
+        <div id="instructionBox" class="text-white/95 text-[15px] font-bold tracking-widest text-center px-4 drop-shadow-md leading-relaxed pointer-events-none w-[90%]">
+            蘸取左下方腻子，用右下方刷子在合适的位置为漆器填补裂缝吧。
+        </div>
+
+        <!-- 原有的开始按钮 -->
+        <div class="start-btn-pulse cursor-pointer" id="startAction">点击开始</div>
+        <div id="hintMessage" class="text-xl font-bold tracking-widest text-white/80" style="display: none;"></div>
+    </div>
+
+    <!-- 暂停菜单 -->
+    <div id="pause-menu" class="overlay-mask">
+        <div class="floating-card">
+            <h2>制作暂停</h2>
+            <div class="pause-tip">玩法：请先蘸取左侧腻子，再点击右侧填补缝隙。</div>
+            <div class="menu-btn primary" id="resumeBtn">继续游戏</div>
+            <div class="menu-btn" onclick="askToRestart()">重新开始</div>
+            <div class="menu-btn secondary" onclick="returnToMenu()">返回关卡选择</div>
+        </div>
+    </div>
+
+    <!-- 结算菜单 -->
+    <div id="result-menu" class="overlay-mask">
+        <!-- 内容动态填充 -->
+    </div>
+
+    <!-- 体力消耗确认弹窗 -->
+    <div id="stamina-modal" class="overlay-mask">
+        <div class="floating-card">
+            <h2>开启修业</h2>
+            <div class="text-sm flex items-center justify-center gap-1 text-[#5d4037]">
+                需消耗 <span class="font-bold text-xl text-[#8c2218] mx-1">20</span>
+                <img src="images/power.png" class="w-4 h-4 inline-block opacity-80" alt="power"> 进行本轮历练
+            </div>
+            <div class="flex gap-4 w-full mt-8">
+                <div class="menu-btn secondary mt-0" onclick="closeStaminaModal()">暂缓</div>
+                <div class="menu-btn primary mt-0" onclick="confirmStartGame()">确认</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 关卡列表菜单 -->
+    <div id="level-menu" class="overlay-mask">
+        <div class="workshop-back" onclick="window.location.href='index.html'">制作工坊</div>
+        <div class="floating-card">
+            <h2>漆骨初成</h2>
+            <div class="w-full flex flex-col items-center gap-1" id="levelList">
+                <!-- 动态注入 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 关卡介绍倒计时遮罩 -->
+    <div id="intro-overlay" class="overlay-mask">
+        <div class="floating-card">
+            <h2>准备开始</h2>
+            <div class="text-sm flex items-center justify-center gap-1 mb-4" style="color:#5d4037;">
+                需消耗 <span style="font-size:20px;font-weight:900;color:#8c2218;margin:0 4px;">20</span>
+                <img src="images/power.png" class="w-4 h-4 inline-block" style="opacity:0.8;" alt="power"> 进行本轮历练
+            </div>
+            <div class="pause-tip" style="margin-bottom:20px;">玩法：请先蘸取左侧腻子，再点击右侧填补缝隙。</div>
+            <div id="intro-countdown" style="font-size:56px;font-weight:900;color:#8c2218;line-height:1;margin-bottom:24px;letter-spacing:-2px;">5</div>
+            <div class="menu-btn" id="intro-skip" style="margin-top:0;">SKIP</div>
+            <div class="menu-btn secondary" id="intro-back" style="margin-top:4px;">返回</div>
+        </div>
+    </div>
+
+    <div id="hit-zone-flash"></div>
+
+    <div id="toast">
+        <span>请先蘸取腻子！</span>
+    </div>
+</div>
+
+<script src="save.js"></script>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('game-container');
+    const progressFill = document.getElementById('progress-fill');
+    const percentText = document.getElementById('percentText');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const liveStars = document.getElementById('liveStars');
+    const bowlBtn = document.getElementById('bowlBtn');
+    const puttyLevelEl = document.getElementById('puttyLevel');
+    const brushBtn = document.getElementById('brushBtn');
+    const brushStatus = document.getElementById('brushStatus');
+    const centralHint = document.getElementById('centralHint');
+    const instructionBox = document.getElementById('instructionBox'); // 绑定新增的文本框
+    const hitFlash = document.getElementById('hit-zone-flash');
+    const pauseMenu = document.getElementById('pause-menu');
+    const levelMenu = document.getElementById('level-menu');
+    const resultMenu = document.getElementById('result-menu');
+    const staminaModal = document.getElementById('stamina-modal');
+    const pauseTrigger = document.getElementById('pause-trigger');
+    const toast = document.getElementById('toast');
+    const phaseText = document.getElementById('phaseText');
+    const startAction = document.getElementById('startAction'); 
+    const hintMessage = document.getElementById('hintMessage'); 
+    const staminaText = document.getElementById('staminaText');
+    const gameUI = document.getElementById('gameUI');
+    
+    // 体力系统变量
+    let sharedSave = LacquerSave.get();
+    let currentStamina = sharedSave.stamina;
+    const maxStamina = sharedSave.maxStamina;
+    const gameCost = sharedSave.gameCost;
+
+    let levelStats = {
+        SLOW: { stars: 0, played: false, unlocked: true },
+        MED:  { stars: 0, played: false, unlocked: false },
+        FAST: { stars: 0, played: false, unlocked: false }
+    };
+
+    let gameState = 'MENU'; 
+    let isPaused = false;
+    let score = 0;
+    let missedCount = 0;
+    let totalChallengeTime = 90; 
+    let timeLeft = 90;
+    
+    let puttyCharges = 0; 
+    const MAX_CHARGES = 3;
+
+    let dryingTimeTotal = 10; 
+    let dryingTimeLeft = 10;
+    let sandingTotalClicks = 10;
+    let sandingCurrentClicks = 0;
+
+    let frame = 0;
+    let cracks = [];
+    let particles = [];
+    let woodY = 0;
+
+    let currentLevel = 'SLOW';
+    const levelOrder = ['SLOW', 'MED', 'FAST'];
+    const directLevelParam = new URLSearchParams(window.location.search).get('level');
+    const directMode = levelOrder.includes(directLevelParam);
+    const config = {
+        SLOW: { speed: 0.9, freq: 320, label: '第一章 刮粗灰' },
+        MED:  { speed: 1.1, freq: 200, label: '第二章 刮中灰' },
+        FAST: { speed: 1.3, freq: 120, label: '第三章 刮细灰' }
+    };
+
+    function resize() {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+    }
+    
+    window.onload = () => {
+        resize();
+        updateStaminaView();
+        if (directMode) {
+            currentLevel = directLevelParam;
+            document.getElementById('stateLabel').innerText = config[directLevelParam].label;
+            resetToIdle();
+            centralHint.style.display = 'none';
+            showIntroOverlay(
+                () => startDirectLevel(directLevelParam)
+            );
+        } else {
+            showLevelMenu();
+        }
+    };
+    
+    window.addEventListener('resize', resize);
+
+    // --- 体力逻辑 ---
+    function updateStaminaView() {
+        sharedSave = LacquerSave.get();
+        currentStamina = sharedSave.stamina;
+        staminaText.innerText = `${currentStamina}/${maxStamina}`;
+    }
+
+    function askToStartGame(e) {
+        if (e) e.stopPropagation();
+        if (gameState !== 'IDLE' && gameState !== 'FINISHED') return;
+        staminaModal.style.display = 'flex';
+    }
+
+    function closeStaminaModal() {
+        staminaModal.style.display = 'none';
+    }
+
+    function confirmStartGame() {
+        if (consumeStaminaForRun()) {
+            closeStaminaModal();
+            startGame();
+        }
+    }
+
+    function consumeStaminaForRun() {
+        const result = LacquerSave.consumeStamina(gameCost);
+        if (result.ok) {
+            sharedSave = result.save;
+            currentStamina = sharedSave.stamina;
+            staminaText.innerText = `${currentStamina}/${maxStamina}`;
+            return true;
+        } else {
+            sharedSave = result.save;
+            currentStamina = sharedSave.stamina;
+            staminaText.innerText = `${currentStamina}/${maxStamina}`;
+            closeStaminaModal();
+            showToast("体力不足，需休憩片刻！", true);
+            if (directMode) setTimeout(() => window.location.href = 'index.html', 800);
+            return false;
+        }
+    }
+
+    function startDirectLevel(levelKey) {
+        currentLevel = levelKey;
+        document.getElementById('stateLabel').innerText = config[levelKey].label;
+        resetToIdle();
+        if (consumeStaminaForRun()) startGame();
+    }
+
+    function updateVisuals() {
+        const heightPercent = puttyCharges === 0 ? 0 : (puttyCharges / MAX_CHARGES) * 85;
+        puttyLevelEl.style.height = `${heightPercent}%`;
+
+        if (puttyCharges > 0) {
+            brushBtn.classList.remove('disabled');
+        } else {
+            brushBtn.classList.add('disabled');
+        }
+    }
+
+    function updateStars() {
+        const progress = 1 - (timeLeft / totalChallengeTime);
+        let activeStars = 0;
+
+        if (progress > 0.3 && missedCount <= 10) activeStars = 1;
+        if (progress > 0.6 && missedCount <= 5) activeStars = 2;
+        if (progress > 0.9 && missedCount === 0) activeStars = 3;
+
+        if (missedCount > 10) activeStars = 0;
+        else if (missedCount > 5 && activeStars > 1) activeStars = 1;
+        else if (missedCount > 0 && activeStars > 2) activeStars = 2;
+
+        const starElements = liveStars.children;
+        for (let i = 0; i < 3; i++) {
+            if (i < activeStars) {
+                starElements[i].className = 'star-icon star-gold';
+            } else {
+                starElements[i].className = 'star-icon star-gray';
+            }
+        }
+    }
+
+    class Particle {
+        constructor(x, y) {
+            this.x = x; this.y = y;
+            this.vx = (Math.random()-0.5)*12; 
+            this.vy = (Math.random()-0.5)*12;
+            this.life = 1.0;
+            this.size = Math.random() * 4 + 2; 
+            const colors = ["#ffffff", "#d4a373", "#fcd34d"];
+            this.color = colors[Math.floor(Math.random() * colors.length)];
+        }
+        update() { 
+            this.x += this.vx; 
+            this.y += this.vy; 
+            this.life -= 0.03; 
+        }
+        draw() {
+            ctx.fillStyle = this.color; 
+            ctx.globalAlpha = Math.max(0, this.life);
+            ctx.beginPath(); 
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); 
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    class Crack {
+        constructor() {
+            this.y = -60;
+            this.x = Math.random() * (canvas.width * 0.7) + (canvas.width * 0.15);
+            this.width = 70 + Math.random() * 70;
+            this.height = 14;
+            this.repaired = false;
+            this.missed = false;
+        }
+        draw() {
+            ctx.save();
+            if (this.repaired) {
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = "rgba(255, 215, 0, 0.8)"; 
+                ctx.fillStyle = '#fff8e7'; 
+                ctx.beginPath(); ctx.roundRect(this.x - this.width/2, this.y, this.width, this.height, 6); ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath(); ctx.roundRect(this.x - this.width/2 + 2, this.y + 2, this.width - 4, this.height - 4, 4); ctx.fill();
+            } else {
+                ctx.strokeStyle = '#2d1b18'; ctx.lineWidth = 6;
+                ctx.beginPath(); ctx.moveTo(this.x - this.width/2, this.y); ctx.lineTo(this.x + this.width/2, this.y + 4); ctx.stroke();
+            }
+            ctx.restore();
+        }
+    }
+
+    function drawWoodBackground() {
+        ctx.fillStyle = '#8d6e63'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        woodY += config[currentLevel].speed;
+        ctx.strokeStyle = '#6d4c41'; ctx.lineWidth = 3.5;
+        for (let i = -200; i < canvas.height + 200; i += 80) {
+            ctx.beginPath();
+            let y = i + (woodY % 80);
+            ctx.moveTo(0, y); ctx.bezierCurveTo(canvas.width/2, y + 25, canvas.width/2, y - 25, canvas.width, y); ctx.stroke();
+        }
+        if (gameState === 'SCRAPING') {
+            const hitZoneY = canvas.height * 0.65;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+            ctx.fillRect(0, hitZoneY - 45, canvas.width, 90);
+            ctx.setLineDash([8, 6]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.beginPath(); ctx.moveTo(0, hitZoneY - 45); ctx.lineTo(canvas.width, hitZoneY - 45); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, hitZoneY + 45); ctx.lineTo(canvas.width, hitZoneY + 45); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    function drawOverlays() {
+        if (gameState === 'DRYING') {
+            const progress = (dryingTimeTotal - dryingTimeLeft) / dryingTimeTotal; 
+            const opacity = progress * 0.7;
+            ctx.fillStyle = `rgba(200, 200, 200, ${opacity})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (Math.random() > 0.5) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.1})`;
+                for(let i=0; i<50; i++) {
+                    ctx.fillRect(Math.random()*canvas.width, Math.random()*canvas.height, 2, 2);
+                }
+            }
+        } else if (gameState === 'SANDING') {
+            const progress = (sandingTotalClicks - sandingCurrentClicks) / sandingTotalClicks;
+            const opacity = progress * 0.7;
+            ctx.fillStyle = `rgba(200, 200, 200, ${opacity})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+
+    function loop() {
+        if (!isPaused && gameState !== 'MENU') {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            frame++;
+            
+            drawWoodBackground();
+
+            if (gameState === 'SCRAPING') {
+                if (frame % 60 === 0 && timeLeft > 0) {
+                    timeLeft--;
+                    const pct = Math.floor((1 - timeLeft / totalChallengeTime) * 100);
+                    percentText.innerText = `${pct}%`;
+                    progressFill.style.transform = `translateX(${- (timeLeft / totalChallengeTime) * 100}%)`;
+                    updateStars(); 
+                    if (timeLeft <= 0) startDrying();
+                }
+                if (frame % config[currentLevel].freq === 0) cracks.push(new Crack());
+                
+                const hitZoneBottom = (canvas.height * 0.65) + 45;
+
+                cracks.forEach((c, idx) => {
+                    c.y += config[currentLevel].speed; 
+                    c.draw();
+                    if (c.y > hitZoneBottom && !c.repaired && !c.missed) {
+                        c.missed = true;
+                        missedCount++;
+                        updateStars();
+                    }
+                    if (c.y > canvas.height + 150) cracks.splice(idx, 1);
+                });
+            } else if (gameState === 'DRYING') {
+                if (frame % 60 === 0 && dryingTimeLeft > 0) {
+                    dryingTimeLeft--;
+                    phaseText.innerText = `静置阴干: ${dryingTimeLeft}s`;
+                    const pct = Math.floor(((10 - dryingTimeLeft) / 10) * 100);
+                    progressFill.style.transform = `translateX(${- (dryingTimeLeft / 10) * 100}%)`;
+                    percentText.innerText = `${pct}%`;
+                    if (dryingTimeLeft <= 0) startSanding();
+                }
+                cracks.forEach(c => c.draw());
+            } else if (gameState === 'SANDING') {
+                cracks.forEach(c => c.draw());
+            }
+
+            drawOverlays();
+
+            particles.forEach((p, i) => {
+                p.update(); p.draw();
+                if (p.life <= 0) particles.splice(i, 1);
+            });
+        }
+        requestAnimationFrame(loop);
+    }
+
+    function showIntroOverlay(callback) {
+        const overlay = document.getElementById('intro-overlay');
+        const countdownEl = document.getElementById('intro-countdown');
+        const skipBtn = document.getElementById('intro-skip');
+        const backBtn = document.getElementById('intro-back');
+        let remaining = 5;
+        countdownEl.innerText = remaining;
+        overlay.style.display = 'flex';
+        const timer = setInterval(() => {
+            remaining--;
+            countdownEl.innerText = remaining;
+            if (remaining <= 0) {
+                clearInterval(timer);
+                overlay.style.display = 'none';
+                callback();
+            }
+        }, 1000);
+        skipBtn.onclick = () => {
+            clearInterval(timer);
+            overlay.style.display = 'none';
+            callback();
+        };
+        backBtn.onclick = () => {
+            clearInterval(timer);
+            window.location.href = 'index.html';
+        };
+    }
+
+    let toastTimer;
+    function showToast(msg, isError = false) {
+        toast.innerHTML = isError 
+            ? `<span>⚠️ ${msg}</span>` 
+            : `<span>${msg}</span>`;
+        toast.style.opacity = '1';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            toast.style.opacity = '0';
+        }, 1500);
+    }
+
+    startAction.addEventListener('pointerdown', askToStartGame);
+
+    bowlBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        if (gameState !== 'SCRAPING' || isPaused) return;
+        
+        if (puttyCharges < MAX_CHARGES) {
+            puttyCharges++;
+            updateVisuals();
+            bowlBtn.style.transform = "scale(1.1)";
+            setTimeout(() => bowlBtn.style.transform = "scale(1)", 100);
+        }
+    });
+
+    brushBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        if (gameState !== 'SCRAPING' || isPaused) return;
+        
+        if (puttyCharges <= 0) {
+            showToast("需先蘸取漆灰！");
+            return;
+        }
+
+        puttyCharges--;
+        updateVisuals();
+
+        let hit = false;
+        cracks.forEach(c => {
+            if (Math.abs(c.y - canvas.height * 0.65) < 45 && !c.repaired) {
+                c.repaired = true; hit = true; 
+                score += 100;
+                scoreDisplay.innerText = `得分: ${score}`;
+                for(let i=0; i<30; i++) particles.push(new Particle(c.x, c.y));
+            }
+        });
+        if (hit) {
+            hitFlash.style.animation = 'none'; hitFlash.offsetHeight;
+            hitFlash.style.animation = 'flash 0.5s forwards';
+        }
+        brushStatus.classList.add('hidden');
+    });
+
+    container.addEventListener('pointerdown', (e) => {
+        if (isPaused) return;
+        if (e.target.closest('.action-btn') || e.target.closest('#pause-trigger')) return;
+
+        if (gameState === 'SANDING') {
+            sandingCurrentClicks++;
+            const pct = Math.floor((sandingCurrentClicks / sandingTotalClicks) * 100);
+            percentText.innerText = `${pct}%`;
+            progressFill.style.transform = `translateX(${pct - 100}%)`;
+            
+            const x = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+            const y = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+            for(let i=0; i<5; i++) particles.push(new Particle(x, y));
+
+            if (sandingCurrentClicks >= sandingTotalClicks) {
+                finishGame();
+            }
+        }
+    });
+
+    pauseTrigger.addEventListener('pointerdown', togglePause);
+    document.getElementById('resumeBtn').addEventListener('pointerdown', togglePause);
+
+    function togglePause() {
+        if (gameState === 'IDLE' || gameState === 'FINISHED' || gameState === 'MENU') return;
+        isPaused = !isPaused;
+        pauseMenu.style.display = isPaused ? 'flex' : 'none';
+        document.getElementById('pauseIcon').style.display = isPaused ? 'none' : 'block';
+        document.getElementById('playIcon').style.display = isPaused ? 'block' : 'none';
+    }
+
+    function askToRestart() {
+        isPaused = false;
+        pauseMenu.style.display = 'none';
+        if (directMode) {
+            resetToIdle();
+            startDirectLevel(currentLevel);
+            return;
+        }
+        resetToIdle();
+        askToStartGame(); // This will pop up the stamina modal again
+    }
+
+    function returnToMenu() {
+        isPaused = false;
+        pauseMenu.style.display = 'none';
+        if (directMode) {
+            window.location.href = 'index.html';
+            return;
+        }
+        resetToIdle();
+        showLevelMenu();
+    }
+
+    function resetToIdle() {
+        gameState = 'IDLE';
+        isPaused = false;
+        
+        pauseMenu.style.display = 'none';
+        levelMenu.style.display = 'none';
+        resultMenu.style.display = 'none';
+        staminaModal.style.display = 'none';
+        
+        gameUI.style.display = 'flex'; 
+        centralHint.style.display = 'flex'; 
+        
+        // 保证文本框在准备阶段显示
+        instructionBox.style.display = 'block';
+        startAction.style.display = 'block';
+        hintMessage.style.display = 'none';
+        
+        score = 0;
+        scoreDisplay.innerText = '得分: 0';
+        percentText.innerText = '0%';
+        phaseText.innerText = '工艺进行中';
+        progressFill.style.transform = 'translateX(-100%)';
+        
+        const starElements = liveStars.children;
+        for(let el of starElements) el.className = 'star-icon star-gray';
+        
+        cracks = [];
+        particles = [];
+        puttyCharges = 0;
+        updateVisuals();
+        
+        bowlBtn.style.display = 'flex';
+        brushBtn.style.display = 'flex';
+    }
+
+    function startGame() {
+        gameState = 'SCRAPING';
+        centralHint.style.display = 'none';
+        resultMenu.style.display = 'none'; 
+        timeLeft = totalChallengeTime;
+        missedCount = 0; score = 0; cracks = [];
+        scoreDisplay.innerText = `得分: 0`;
+        percentText.innerText = "0%";
+        phaseText.innerText = "刮灰中";
+        puttyCharges = 0; 
+        updateVisuals();
+        updateStars(); 
+        progressFill.style.transform = `translateX(-100%)`;
+        
+        bowlBtn.style.display = 'flex';
+        brushBtn.style.display = 'flex';
+    }
+
+    function startDrying() {
+        gameState = 'DRYING';
+        dryingTimeLeft = 10;
+        phaseText.innerText = "静置阴干: 10s";
+        percentText.innerText = "0%";
+        progressFill.style.transform = `translateX(-100%)`;
+        
+        // 阴干阶段隐藏文本框和按钮，只显示提示文字
+        instructionBox.style.display = 'none';
+        startAction.style.display = 'none';
+        hintMessage.innerText = '静置阴干中...';
+        hintMessage.style.display = 'block';
+        centralHint.style.display = 'flex';
+        
+        bowlBtn.style.display = 'none';
+        brushBtn.style.display = 'none';
+    }
+
+    function startSanding() {
+        gameState = 'SANDING';
+        sandingCurrentClicks = 0;
+        phaseText.innerText = "点击屏幕打磨";
+        percentText.innerText = "0%";
+        progressFill.style.transform = `translateX(-100%)`;
+        
+        // 打磨阶段同样隐藏文本框
+        instructionBox.style.display = 'none';
+        startAction.style.display = 'none';
+        hintMessage.innerText = '点击屏幕打磨';
+        hintMessage.style.display = 'block';
+        centralHint.style.display = 'flex';
+    }
+
+    function finishGame() {
+        gameState = 'FINISHED';
+        centralHint.style.display = 'none'; 
+        
+        let stars = 3;
+        if (missedCount > 10) stars = 0;
+        else if (missedCount > 5) stars = 1;
+        else if (missedCount > 0) stars = 2;
+
+        let statusText = stars === 3 ? "技臻化境" : (stars === 2 ? "中规中矩" : (stars === 1 ? "勉强及格" : "功亏一篑"));
+        
+        let imgSrc = "";
+        if (stars === 3) imgSrc = "images/emo-satisfied.png";
+        else if (stars === 2) imgSrc = "images/emo-good.png";
+        else imgSrc = "images/emo-angry.png";
+
+        levelStats[currentLevel].played = true;
+        levelStats[currentLevel].stars = Math.max(levelStats[currentLevel].stars, stars);
+
+        if (stars >= 1) {
+            if (currentLevel === 'SLOW') levelStats['MED'].unlocked = true;
+            else if (currentLevel === 'MED') levelStats['FAST'].unlocked = true;
+        }
+
+        const saveResult = LacquerSave.recordGameResult("game2", stars, levelOrder.indexOf(currentLevel));
+        sharedSave = saveResult.save;
+        currentStamina = sharedSave.stamina;
+        staminaText.innerText = `${currentStamina}/${maxStamina}`;
+
+        let starHtml = "";
+        for(let i=0; i<3; i++) starHtml += `<span class="${i < stars ? 'star-result-active' : 'opacity-20'} text-2xl mx-1">★</span>`;
+        const nextActionHtml = stars >= 1
+            ? `<div class="menu-btn primary" onclick="goToNextGame2Level()">${currentLevel === 'FAST' ? '进入下一章' : '进入下一关'}</div>`
+            : "";
+
+        resultMenu.innerHTML = `
+            <div class="floating-card pointer-events-auto">
+                <h2>历练结果</h2>
+                
+                <div class="text-2xl font-bold tracking-widest mb-2 text-[#3e2723]">${statusText}</div>
+                <div class="text-sm mb-2" style="color: #8d6e63;">手艺得分: ${score}</div>
+                <div class="mb-6">${starHtml}</div>
+                
+                <div class="result-image-box">
+                    <img src="${imgSrc}" alt="${statusText}">
+                </div>
+                
+                ${nextActionHtml}
+                <div class="menu-btn ${stars >= 1 ? '' : 'primary'}" onclick="askToRetry()">再次修习</div>
+                <div class="menu-btn secondary" onclick="window.location.href='index.html'">返回工坊</div>
+            </div>
+        `;
+        resultMenu.style.display = 'flex';
+    }
+
+    window.goToNextGame2Level = function() {
+        const currentIndex = levelOrder.indexOf(currentLevel);
+        if (currentIndex >= 0 && currentIndex < levelOrder.length - 1) {
+            window.location.href = `game2.html?level=${levelOrder[currentIndex + 1]}`;
+        } else {
+            window.location.href = 'game3.html?level=1';
+        }
+    };
+
+    window.askToRetry = function() {
+        resultMenu.style.display = 'none';
+        if (directMode) startDirectLevel(currentLevel);
+        else askToStartGame();
+    };
+
+    function showLevelMenu() {
+        gameState = 'MENU';
+        pauseMenu.style.display = 'none';
+        gameUI.style.display = 'none';
+        renderLevels();
+        levelMenu.style.display = 'flex';
+    }
+
+    function showLevelMenuFromFinish() {
+        if (directMode) {
+            window.location.href = 'index.html';
+            return;
+        }
+        resultMenu.style.display = 'none';
+        showLevelMenu();
+    }
+
+    function renderLevels() {
+        const list = document.getElementById('levelList');
+        list.innerHTML = "";
+        Object.keys(config).forEach(key => {
+            const stat = levelStats[key];
+            let stars = "";
+            if(stat.played) {
+                for(let i=0; i<3; i++) stars += i < stat.stars ? "★" : "☆";
+            }
+            
+            const btn = document.createElement('div');
+            if (!stat.unlocked) {
+                btn.className = "menu-btn flex justify-between items-center locked";
+                btn.innerHTML = `<span>${config[key].label}</span><span class="text-xs opacity-40">🔒</span>`;
+            } else {
+                btn.className = "menu-btn flex justify-between items-center";
+                btn.innerHTML = `<span>${config[key].label}</span><span class="level-stars text-xs">${stars}</span>`;
+                btn.onclick = () => {
+                    currentLevel = key;
+                    document.getElementById('stateLabel').innerText = config[key].label;
+                    levelMenu.style.display = 'none';
+                    resetToIdle();
+                    centralHint.style.display = 'none';
+                    showIntroOverlay(
+                        () => confirmStartGame()
+                    );
+                };
+            }
+            list.appendChild(btn);
+        });
+    }
+
+    window.closeStaminaModal = closeStaminaModal;
+    window.confirmStartGame = confirmStartGame;
+    window.showLevelMenuFromFinish = showLevelMenuFromFinish;
+    window.resetToIdle = resetToIdle;
+    window.askToRestart = askToRestart;
+    window.returnToMenu = returnToMenu;
+
+    loop();
+</script>
+
+</body>
+</html>
